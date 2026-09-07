@@ -219,7 +219,7 @@ don't hand-make the folders every time.
 3. Pick the base folder (`lib/features`)
 4. Enter the feature name (e.g. `auth`, `home`, `profile`)
 
-This creates:
+This creates ->
 
 ```
 lib/features/<feature_name>/
