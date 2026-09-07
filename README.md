@@ -156,7 +156,7 @@ Each entry pairs a photo with the prompt sent to the model:
 ```
 
 Prompt wording matters more than the image does — the model leans on it
-heavily, so garment prompts are written to be specific and consistent.
+heavily, so garment prompts are written to be specific and consistent
 
 Bundling keeps the catalog working with no network and no credentials.
 Moving it server-side touches four files and is planned but not started —
