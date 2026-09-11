@@ -42,6 +42,15 @@ dependencies:
   # Notifications
   awesome_notifications: ^0.11.0
 
+  # In-app browser
+  webview_flutter: ^4.14.1
+  # The endorsed platform packages. Listed directly because the browser
+  # reaches for platform-only settings — camera/mic prompts on Android,
+  # inline media on iOS — and importing a transitive dependency trips
+  # `depend_on_referenced_packages`.
+  webview_flutter_android: ^4.14.1
+  webview_flutter_wkwebview: ^3.26.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

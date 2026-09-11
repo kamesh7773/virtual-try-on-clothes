@@ -17,6 +17,18 @@ platform view.
 
 ## How it works
 
+The app opens on a home screen with two modes: **Virtual Try-On**, the live
+Decart mirror described below, and **Web View**, an in-app browser for the
+sites in `WebDestinations`. A destination marked `promotesFramedLinks` — the
+mirror is — has the links it opens in its own embedded browser turned into
+real page loads, so a tapped style card lands on the retailer rather than on a
+blank frame. Every page the browser opens is announced in a snackbar and
+written to a local history, readable under *Browse → History*. A page injected
+into every site reports what the user tapped — the words on the card, the
+heading above it, and the page it happened on — so each row records not just
+the URL and its timings but the tap that led there. Tapping a row opens the
+full record: the tap, the timings, and the URL broken into path and query.
+
 ```
  Flutter (Dart)                  Platform channels              Native
 ┌──────────────────────┐        ┌──────────────────┐        ┌────────────────────┐
@@ -51,12 +63,20 @@ lib/
 │   ├── services/                # Api client, storage, permissions, dialogs
 │   ├── routes/  theme/  widgets/  utils/  extensions/
 │   └── constants/assets.gen.dart
-└── features/try_on/
-    ├── models/garment_model.dart
-    ├── repositories/catalog_repository.dart
-    ├── services/decart_session_service.dart   # Method/event channel bridge
-    ├── view_models/                           # camera / catalog / session
-    └── views/                                 # try_on_screen + widgets
+├── features/home/                             # Front door: try-on or browser
+│   └── views/                                 # home_screen + option tile
+├── features/try_on/
+│   ├── models/garment_model.dart
+│   ├── repositories/catalog_repository.dart
+│   ├── services/decart_session_service.dart   # Method/event channel bridge
+│   ├── view_models/                           # camera / catalog / session
+│   └── views/                                 # try_on_screen + widgets
+└── features/web_view/                         # In-app browser
+    ├── models/                                # Destinations, visits, taps
+    ├── repositories/url_history_repository.dart  # History in shared prefs
+    ├── utils/visit_format.dart                # Dates, durations, outcomes
+    ├── view_models/url_history_view_model.dart
+    └── views/                                 # browser, history, one visit
 
 android/app/src/main/kotlin/com/livelook/app/decart/   # Kotlin bridge
 ios/Runner/Decart/                                     # Swift bridge
@@ -172,6 +192,8 @@ see [docs/dynamic-catalog.md](docs/dynamic-catalog.md).
 - **Storage** — `flutter_secure_storage`, `shared_preferences`
 - **UI** — `flutter_screenutil`, `flutter_svg`, `toastification`,
   `loading_animation_widget`
+- **In-app browser** — `webview_flutter` (+ its Android/WKWebView platform
+  packages, for camera prompts and inline media)
 - **Notifications** — `awesome_notifications`
 - **Utilities** — `connectivity_plus`, `permission_handler`, `package_info_plus`
 - **Tooling** — `flutter_gen_runner`, `flutter_launcher_icons`,

@@ -4,5 +4,24 @@
 // `NavigationService.pushNamed(name, arguments: ...)`) and extract them
 // inside `RouteGenerator.generateRoute` with
 // `settings.arguments as <ScreenName>Args?`. Always keep them immutable.
-//
-// No route takes arguments yet — add one class per screen that needs them.
+
+import 'package:flutter/foundation.dart';
+
+import '../../features/web_view/models/url_visit.dart';
+import '../../features/web_view/models/web_destination.dart';
+
+/// Which site the in-app browser should open.
+@immutable
+class WebViewScreenArgs {
+  final WebDestination destination;
+
+  const WebViewScreenArgs({required this.destination});
+}
+
+/// Which recorded visit the detail screen should show.
+@immutable
+class UrlVisitDetailArgs {
+  final UrlVisit visit;
+
+  const UrlVisitDetailArgs({required this.visit});
+}

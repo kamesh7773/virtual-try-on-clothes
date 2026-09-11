@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_widget.dart';
+import '../../../core/widgets/stage_back_button.dart';
 import '../view_models/camera_state.dart';
 import '../view_models/camera_view_model.dart';
 import '../view_models/catalog_state.dart';
@@ -109,19 +110,28 @@ class _Masthead extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 12.h),
-      child: Column(
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          const LiveLookWordmark(),
-          SizedBox(height: 2.h),
-          Text(
-            'VIRTUAL TRY-ON',
-            style: TextStyle(
-              fontSize: 9.sp,
-              color: AppColors.onStageFaint,
-              letterSpacing: 3,
-              fontWeight: FontWeight.w300,
-            ),
+          Column(
+            children: [
+              const LiveLookWordmark(),
+              SizedBox(height: 2.h),
+              Text(
+                'VIRTUAL TRY-ON',
+                style: TextStyle(
+                  fontSize: 9.sp,
+                  color: AppColors.onStageFaint,
+                  letterSpacing: 3,
+                  fontWeight: FontWeight.w300,
+                ),
+              ),
+            ],
           ),
+          // Stacked, not stitched into the column: the way back must not cost
+          // the stage any height.
+          if (Navigator.of(context).canPop())
+            const Positioned(left: 0, child: StageBackButton()),
         ],
       ),
     );

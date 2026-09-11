@@ -45,7 +45,7 @@ class VirtualTryOnApp extends ConsumerWidget {
           ],
           supportedLocales: const [Locale('en', 'US')],
           locale: const Locale('en', 'US'),
-          initialRoute: Routes.tryOn,
+          initialRoute: Routes.home,
           onGenerateRoute: RouteGenerator.generateRoute,
           builder: (context, child) {
             final content = ToastificationWrapper(
