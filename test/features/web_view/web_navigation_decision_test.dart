@@ -66,4 +66,36 @@ void main() {
     expect(WebDestinations.mirror.promotesFramedLinks, isTrue);
     expect(WebDestinations.dicksSportingGoods.promotesFramedLinks, isFalse);
   });
+
+  group('where promotion applies', () {
+    test('on the destination\'s own site', () {
+      expect(
+        WebDestinations.mirror.promotesFramedLinksOn('mirror.maxaix.com'),
+        isTrue,
+      );
+    });
+
+    test('nowhere else — a retailer\'s frames are its own', () {
+      // Having followed a link out of the mirror, the browser is on a site
+      // whose frames are a size guide, a payment widget, a review panel.
+      // Promoting one leaves the widget rendered on its own, which reads as
+      // the screen going blank.
+      expect(
+        WebDestinations.mirror.promotesFramedLinksOn(
+          'www.dickssportinggoods.com',
+        ),
+        isFalse,
+      );
+      expect(WebDestinations.mirror.promotesFramedLinksOn(''), isFalse);
+    });
+
+    test('and never for a destination that is not marked', () {
+      expect(
+        WebDestinations.dicksSportingGoods.promotesFramedLinksOn(
+          'www.dickssportinggoods.com',
+        ),
+        isFalse,
+      );
+    });
+  });
 }

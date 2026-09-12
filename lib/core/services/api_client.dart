@@ -53,9 +53,27 @@ Dio apiClient(Ref ref) {
 /// key in secure storage wins, otherwise the build-time key from `.env.*`.
 /// There is no login or refresh-token flow — Decart authenticates with a
 /// single API key, so a 401 here means the key is missing or invalid.
+/// Whether a request is bound for Decart, and so should carry its key.
+///
+/// A relative path resolves against the Decart base URL and is always theirs;
+/// an absolute URL is only theirs when its host matches.
+@visibleForTesting
+bool isDecartRequest(String url) {
+  final requested = Uri.tryParse(url);
+  if (requested == null || !requested.hasScheme) return true;
+
+  final base = Uri.tryParse(ApiEndpoints.baseUrl);
+  return base != null && requested.host == base.host;
+}
+
 Interceptor _apiKeyInterceptor(Ref ref) {
   return InterceptorsWrapper(
     onRequest: (options, handler) async {
+      // Repositories call third-party hosts through this same Dio by passing
+      // an absolute URL — a try-on service, a retailer's image CDN. Decart's
+      // key is a full account credential; it goes to Decart and nowhere else.
+      if (!isDecartRequest(options.path)) return handler.next(options);
+
       final storage = ref.read(secureStorageServiceProvider.notifier);
       final apiKey = await storage.getApiKey() ?? Env.decartApiKey;
 

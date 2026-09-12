@@ -30,6 +30,17 @@ class WebDestination {
   /// even after the site navigates somewhere else.
   String get host => Uri.parse(url).host;
 
+  /// Whether framed links should be promoted while the browser is on [host].
+  ///
+  /// Scoped to this site and no further. A destination is marked because of
+  /// how *it* opens outside links; once the browser has followed one, it is
+  /// on someone else's site, whose frames are its own — a size guide, a
+  /// payment widget, a review panel. Promoting one of those throws the user
+  /// off the page they are reading and onto a widget rendered on its own,
+  /// which reads as the screen going blank.
+  bool promotesFramedLinksOn(String currentHost) =>
+      promotesFramedLinks && currentHost == host;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) || (other is WebDestination && other.id == id);

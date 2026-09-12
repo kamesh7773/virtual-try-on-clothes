@@ -21,4 +21,13 @@ class ApiEndpoints {
 
   /// Header carrying the long-lived Decart API key.
   static const String apiKeyHeader = 'x-api-key';
+
+  /// Try-on service the in-app browser posts products to. A full URL, not a
+  /// path: it is a different host from Decart's, the same one in every
+  /// flavor.
+  ///
+  /// POST, `multipart/form-data` — `category` (one of the four the service
+  /// accepts) and `image` (the product shot as a file). Takes no token, and
+  /// answers with the URL of the page to open.
+  static const String tryOn = 'https://mirror.maxaix.com/api/tryon';
 }

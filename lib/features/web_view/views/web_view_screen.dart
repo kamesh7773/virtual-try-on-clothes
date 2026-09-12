@@ -7,14 +7,17 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
-import '../../../core/routes/routes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/stage_back_button.dart';
+import '../models/visit_trigger.dart';
+import '../models/web_bridge_message.dart';
 import '../models/web_destination.dart';
 import '../models/web_navigation_decision.dart';
+import '../models/web_product.dart';
 import '../models/web_tap_report.dart';
-import '../models/visit_trigger.dart';
+import '../view_models/product_try_on_view_model.dart';
 import '../view_models/url_history_view_model.dart';
+import 'widgets/try_on_overlay.dart';
 
 /// An in-app browser for a single [WebDestination].
 ///
@@ -33,12 +36,20 @@ class WebViewScreen extends HookConsumerWidget {
     final failure = useState<String?>(null);
     final canGoBack = useState<bool>(false);
     final history = ref.read(urlHistoryViewModelProvider.notifier);
+    final tryOn = ref.watch(productTryOnViewModelProvider);
+    final tryOnViewModel = ref.read(productTryOnViewModelProvider.notifier);
 
     // The visit currently loading. Held in refs, not state: nothing on this
     // screen renders them, and a rebuild per page load would restart nothing
     // but would cost a frame.
     final visitId = useRef<String?>(null);
     final visitStartedAt = useRef<DateTime?>(null);
+
+    // What the page last said about a tap, waiting for the navigation it
+    // explains. Held here rather than inside the controller so the app can
+    // file its own — the try-on jump is a tap the page never saw.
+    final pendingTap = useRef<WebTapReport?>(null);
+    final pendingTapAt = useRef<DateTime?>(null);
 
     useEffect(() {
       // Reading the store is what makes a page recorded now sit above the
@@ -54,6 +65,9 @@ class WebViewScreen extends HookConsumerWidget {
         destination: destination,
         failure: failure,
         canGoBack: canGoBack,
+        pendingTap: pendingTap,
+        pendingTapAt: pendingTapAt,
+        onProduct: tryOnViewModel.setProduct,
         onVisitStarted: (url, tap, trigger) {
           visitId.value = history.record(
             url: url,
@@ -65,7 +79,6 @@ class WebViewScreen extends HookConsumerWidget {
             sourceTitle: tap?.sourceTitle,
           );
           visitStartedAt.value = DateTime.now();
-          _showVisitSnackBar(context, url);
         },
         onVisitFinished: (title) {
           final id = visitId.value;
@@ -120,15 +133,74 @@ class WebViewScreen extends HookConsumerWidget {
               ),
               Expanded(
                 child: _Frame(
-                  child: failure.value != null
-                      ? _LoadFailure(
-                          message: failure.value!,
-                          onRetry: () {
-                            failure.value = null;
-                            controller.loadRequest(Uri.parse(destination.url));
-                          },
-                        )
-                      : WebViewWidget(controller: controller),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: failure.value != null
+                            ? _LoadFailure(
+                                message: failure.value!,
+                                onRetry: () {
+                                  failure.value = null;
+                                  controller.loadRequest(
+                                    Uri.parse(destination.url),
+                                  );
+                                },
+                              )
+                            : WebViewWidget(controller: controller),
+                      ),
+                      if (tryOn.canTryOn && failure.value == null)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: Align(
+                            alignment: Alignment.bottomCenter,
+                            child: TryOnOverlay(
+                              product: tryOn.product!,
+                              category: tryOn.category!,
+                              isLoading: tryOn.isLoading,
+                              onTap: () async {
+                                final product = tryOn.product!;
+                                final category = tryOn.category!;
+                                final url = await tryOnViewModel
+                                    .requestTryOnUrl();
+                                if (!context.mounted) return;
+
+                                if (url == null) {
+                                  final error = ref
+                                      .read(productTryOnViewModelProvider)
+                                      .error;
+                                  _showMessage(
+                                    context,
+                                    error ?? 'Try-on failed',
+                                    isError: true,
+                                  );
+                                  tryOnViewModel.dismissError();
+                                  return;
+                                }
+
+                                // Filed before the load so the history records
+                                // the try-on as what it was, not as the site
+                                // navigating itself.
+                                pendingTap.value = WebTapReport(
+                                  promote: true,
+                                  url: url,
+                                  trigger: VisitTrigger.element,
+                                  label:
+                                      'Try-on (${category.wireName}) · '
+                                      '${product.title}',
+                                  context: product.brand,
+                                  sourceUrl: product.pageUrl,
+                                  sourceTitle: product.title,
+                                );
+                                pendingTapAt.value = DateTime.now();
+                                await controller.loadRequest(Uri.parse(url));
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -167,6 +239,9 @@ WebViewController _createController({
   required ValueNotifier<String?> failure,
   required ValueNotifier<bool> canGoBack,
   required bool Function() isMounted,
+  required ObjectRef<WebTapReport?> pendingTap,
+  required ObjectRef<DateTime?> pendingTapAt,
+  required void Function(WebProduct? product) onProduct,
   required void Function(String url, WebTapReport? tap, VisitTrigger trigger)
   onVisitStarted,
   required void Function(String? title) onVisitFinished,
@@ -184,11 +259,6 @@ WebViewController _createController({
   // iframe while the promoted page is still loading would otherwise ask for
   // it again on every mutation.
   String? lastPromoted;
-
-  // What the page last said about a tap, waiting for the navigation it
-  // explains. The two arrive separately and in that order.
-  WebTapReport? pendingTap;
-  DateTime? pendingTapAt;
 
   // The destination's own first page is opened by the app, not by a tap.
   var hasLoaded = false;
@@ -216,7 +286,7 @@ WebViewController _createController({
             url: request.url,
             isMainFrame: request.isMainFrame,
             currentHost: currentHost,
-            promotesFramedLinks: destination.promotesFramedLinks,
+            promotesFramedLinks: destination.promotesFramedLinksOn(currentHost),
           );
 
           switch (action) {
@@ -240,14 +310,17 @@ WebViewController _createController({
 
           // A report older than this belongs to a tap that led nowhere — an
           // in-page link, a dismissed overlay — not to the page now loading.
-          final reportedAt = pendingTapAt;
+          final reportedAt = pendingTapAt.value;
           final isFresh =
               reportedAt != null &&
               DateTime.now().difference(reportedAt) <
                   const Duration(seconds: 8);
-          final tap = isFresh ? pendingTap : null;
-          pendingTap = null;
-          pendingTapAt = null;
+          final tap = isFresh ? pendingTap.value : null;
+          pendingTap.value = null;
+          pendingTapAt.value = null;
+
+          // The old page's product is gone the moment the next one starts.
+          onProduct(null);
 
           onVisitStarted(
             url,
@@ -260,11 +333,17 @@ WebViewController _createController({
           // The head usually exists by now, so the page is styled before its
           // first paint. The script no-ops when it does not.
           _applyNativeFeel(controller);
-          _applyBridge(controller, promote: destination.promotesFramedLinks);
+          _applyBridge(
+            controller,
+            promote: destination.promotesFramedLinksOn(currentHost),
+          );
         },
         onPageFinished: (_) {
           _applyNativeFeel(controller);
-          _applyBridge(controller, promote: destination.promotesFramedLinks);
+          _applyBridge(
+            controller,
+            promote: destination.promotesFramedLinksOn(currentHost),
+          );
           // The title is only worth recording once the page has one, which is
           // why the visit is completed here rather than on the first byte.
           controller.getTitle().then((title) {
@@ -329,22 +408,31 @@ WebViewController _createController({
   controller.addJavaScriptChannel(
     _bridgeChannel,
     onMessageReceived: (message) {
-      final report = WebTapReport.tryParse(message.message);
-      if (report == null) return;
+      switch (WebBridgeMessage.tryParse(message.message)) {
+        case WebProductMessage(:final product):
+          onProduct(product);
 
-      final uri = Uri.tryParse(report.url);
-      if (uri == null) return;
-      if (uri.scheme != 'http' && uri.scheme != 'https') return;
+        case WebTapMessage(:final report):
+          final uri = Uri.tryParse(report.url);
+          if (uri == null) return;
+          if (uri.scheme != 'http' && uri.scheme != 'https') return;
 
-      pendingTap = report;
-      pendingTapAt = DateTime.now();
+          pendingTap.value = report;
+          pendingTapAt.value = DateTime.now();
 
-      if (!report.promote) return;
-      if (uri.host.isEmpty || uri.host == currentHost) return;
-      if (report.url == lastPromoted) return;
+          if (!report.promote) return;
+          // The bridge is reachable by every script on the page, so the
+          // decision is made here too, not trusted from the message.
+          if (!destination.promotesFramedLinksOn(currentHost)) return;
+          if (uri.host.isEmpty || uri.host == currentHost) return;
+          if (report.url == lastPromoted) return;
 
-      lastPromoted = report.url;
-      controller.loadRequest(uri);
+          lastPromoted = report.url;
+          controller.loadRequest(uri);
+
+        case null:
+          return;
+      }
     },
   );
 
@@ -352,9 +440,15 @@ WebViewController _createController({
   return controller;
 }
 
-/// Announces each page the browser opens, with a way straight to the full
-/// history — the record is only useful if the user knows it is being kept.
-void _showVisitSnackBar(BuildContext context, String url) {
+/// Says something once, over the page. Used only when the app has to report
+/// a failure the user asked for — a try-on that could not be fetched. Every
+/// page load is recorded silently; the history screen is where it is read.
+void _showMessage(
+  BuildContext context,
+  String message, {
+  SnackBarAction? action,
+  bool isError = false,
+}) {
   final messenger = ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return;
 
@@ -364,19 +458,18 @@ void _showVisitSnackBar(BuildContext context, String url) {
       SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.stageElevated,
-        duration: const Duration(seconds: 2),
+        duration: Duration(seconds: isError ? 4 : 2),
         shape: const RoundedRectangleBorder(),
         content: Text(
-          url,
-          maxLines: 1,
+          message,
+          maxLines: 2,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 11.sp, color: AppColors.onStageSecondary),
+          style: TextStyle(
+            fontSize: 11.sp,
+            color: isError ? AppColors.error : AppColors.onStageSecondary,
+          ),
         ),
-        action: SnackBarAction(
-          label: 'HISTORY',
-          textColor: AppColors.onStagePrimary,
-          onPressed: () => Navigator.of(context).pushNamed(Routes.urlHistory),
-        ),
+        action: action,
       ),
     );
 }
@@ -466,6 +559,15 @@ const String _bridgeScript = r"""
   var promoting = window.__livelookPromote === true;
   console.log('livelook: bridge installed on ' + location.href +
     (promoting ? ' (promoting)' : ''));
+
+  function absolute(url) {
+    if (!url || !/^(https?:)?\/\//i.test(url)) return null;
+    try {
+      return new URL(url, location.href).href;
+    } catch (e) {
+      return null;
+    }
+  }
 
   function external(url) {
     if (!url || !/^https?:/i.test(url)) return null;
@@ -575,6 +677,130 @@ const String _bridgeScript = r"""
     }
     return null;
   }
+
+  // ─── What the page is selling ──────────────────────────────────────
+  // Read from the page's own structured data. Retailers publish it for search
+  // engines, which makes it far steadier than anything the layout could be
+  // scraped for.
+  function firstImage(value) {
+    if (!value) return null;
+    if (typeof value === 'string') return absolute(value);
+    if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) {
+        var found = firstImage(value[i]);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (typeof value === 'object') {
+      return firstImage(value.url || value.contentUrl || value['@id']);
+    }
+    return null;
+  }
+
+  function findProductNode(node, depth) {
+    if (!node || depth > 4) return null;
+    if (Array.isArray(node)) {
+      for (var i = 0; i < node.length; i++) {
+        var found = findProductNode(node[i], depth + 1);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (typeof node !== 'object') return null;
+
+    var type = node['@type'];
+    var isProduct = type === 'Product' ||
+      (Array.isArray(type) && type.indexOf('Product') >= 0);
+    if (isProduct) return node;
+
+    return findProductNode(node['@graph'] || node.mainEntity, depth + 1);
+  }
+
+  function productFromStructuredData() {
+    var scripts = document.querySelectorAll(
+      'script[type="application/ld+json"]');
+    for (var i = 0; i < scripts.length; i++) {
+      var node;
+      try {
+        node = findProductNode(JSON.parse(scripts[i].textContent), 0);
+      } catch (e) {
+        continue;
+      }
+      if (!node) continue;
+
+      var image = firstImage(node.image);
+      if (!image) continue;
+
+      var offers = node.offers;
+      if (Array.isArray(offers)) offers = offers[0];
+      var brand = node.brand;
+      if (brand && typeof brand === 'object') brand = brand.name;
+
+      return {
+        title: node.name || document.title || '',
+        image: image,
+        brand: typeof brand === 'string' ? brand : '',
+        sku: node.sku || node.mpn || '',
+        price: offers && offers.price != null ? String(offers.price) : '',
+        currency: offers && offers.priceCurrency ? offers.priceCurrency : ''
+      };
+    }
+    return null;
+  }
+
+  function metaContent(name) {
+    var el = document.querySelector('meta[property="' + name + '"]') ||
+      document.querySelector('meta[name="' + name + '"]');
+    return el ? el.getAttribute('content') : null;
+  }
+
+  // Sites that publish no JSON-LD still tag their product pages for social
+  // previews, and that is enough: a name and a picture.
+  function productFromMeta() {
+    var image = absolute(metaContent('og:image'));
+    if (!image) return null;
+
+    var type = metaContent('og:type') || '';
+    var priced = metaContent('product:price:amount');
+    var marked = document.querySelector('[itemtype*="schema.org/Product" i]');
+    if (!/product/i.test(type) && !priced && !marked) return null;
+
+    return {
+      title: metaContent('og:title') || document.title || '',
+      image: image,
+      brand: metaContent('product:brand') || '',
+      sku: metaContent('product:retailer_item_id') || '',
+      price: priced || '',
+      currency: metaContent('product:price:currency') || ''
+    };
+  }
+
+  var lastProductKey = null;
+
+  function reportProduct() {
+    var product = productFromStructuredData() || productFromMeta();
+    var key = product ? product.image + '|' + location.href : '';
+    if (key === lastProductKey) return;
+    lastProductKey = key;
+
+    var payload = { type: 'product', url: location.href };
+    if (product) {
+      payload.title = product.title;
+      payload.image = product.image;
+      payload.brand = product.brand;
+      payload.sku = product.sku;
+      payload.price = product.price;
+      payload.currency = product.currency;
+      console.log('livelook: product ' + product.title);
+    }
+    LiveLookBridge.postMessage(JSON.stringify(payload));
+  }
+
+  reportProduct();
+  // Retail pages fill themselves in after the first paint, and a single-page
+  // site swaps products without ever loading again.
+  setInterval(reportProduct, 2000);
 
   document.addEventListener('click', function (event) {
     var node = event.target;

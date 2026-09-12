@@ -53,7 +53,7 @@ final class SessionViewModelProvider
   }
 }
 
-String _$sessionViewModelHash() => r'7f89c6588bbfe353c149c79ec47f784835c92839';
+String _$sessionViewModelHash() => r'87fbfcc4c1c78bc064f6539c802e1f287250a316';
 
 /// Owns the live Decart session.
 ///

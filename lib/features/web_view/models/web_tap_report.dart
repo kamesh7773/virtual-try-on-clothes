@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 
 import 'visit_trigger.dart';
@@ -40,26 +38,19 @@ class WebTapReport {
 
   /// Returns null for anything that is not a report this app sent itself —
   /// the bridge is reachable by any script on the page.
-  static WebTapReport? tryParse(String raw) {
-    try {
-      final json = jsonDecode(raw);
-      if (json is! Map<String, dynamic>) return null;
+  static WebTapReport? tryParse(Map<String, dynamic> json) {
+    final url = json['url'];
+    if (url is! String || url.isEmpty) return null;
 
-      final url = json['url'];
-      if (url is! String || url.isEmpty) return null;
-
-      return WebTapReport(
-        promote: json['promote'] == true,
-        url: url,
-        trigger: VisitTrigger.fromName(json['trigger'] as String?),
-        label: _clean(json['label']),
-        context: _clean(json['context']),
-        sourceUrl: _clean(json['sourceUrl']),
-        sourceTitle: _clean(json['sourceTitle']),
-      );
-    } catch (_) {
-      return null;
-    }
+    return WebTapReport(
+      promote: json['promote'] == true,
+      url: url,
+      trigger: VisitTrigger.fromName(json['trigger'] as String?),
+      label: _clean(json['label']),
+      context: _clean(json['context']),
+      sourceUrl: _clean(json['sourceUrl']),
+      sourceTitle: _clean(json['sourceTitle']),
+    );
   }
 
   static String? _clean(Object? value) {

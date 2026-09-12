@@ -22,12 +22,22 @@ Decart mirror described below, and **Web View**, an in-app browser for the
 sites in `WebDestinations`. A destination marked `promotesFramedLinks` — the
 mirror is — has the links it opens in its own embedded browser turned into
 real page loads, so a tapped style card lands on the retailer rather than on a
-blank frame. Every page the browser opens is announced in a snackbar and
-written to a local history, readable under *Browse → History*. A page injected
+blank frame. That only applies while the browser is on that destination's own
+host (`promotesFramedLinksOn`): once it has followed a link out, the frames
+belong to the site it landed on. Every page the browser opens is written silently to a local
+history, readable from **History** on the home screen. A page injected
 into every site reports what the user tapped — the words on the card, the
 heading above it, and the page it happened on — so each row records not just
 the URL and its timings but the tap that led there. Tapping a row opens the
 full record: the tap, the timings, and the URL broken into path and query.
+
+On a page that publishes a product — its `Product` JSON-LD or its OpenGraph
+tags — the browser offers a **try-on** over it. Tapping downloads the product
+shot from the retailer and posts it to `ApiEndpoints.tryOn` as multipart form
+data, alongside the `category` the product's name resolves to — one of `golf`,
+`athletics`, `workout`, `sports` — then opens the page that service answers
+with. That endpoint is a full URL on a different host from Decart's, so the
+Decart key is not attached to it (`isDecartRequest`).
 
 ```
  Flutter (Dart)                  Platform channels              Native

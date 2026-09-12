@@ -48,6 +48,8 @@ void main() {
     expect(find.text('mirror.maxaix.com'), findsOneWidget);
     expect(find.text("DICK'S SPORTING GOODS"), findsOneWidget);
     expect(find.text('www.dickssportinggoods.com'), findsOneWidget);
+    // The record is reached from the home screen, not from here.
+    expect(find.text('HISTORY'), findsNothing);
   });
 
   testWidgets('picking a destination pushes it to the browser route', (
