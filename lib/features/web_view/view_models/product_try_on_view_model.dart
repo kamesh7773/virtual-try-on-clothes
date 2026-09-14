@@ -31,29 +31,35 @@ class ProductTryOnViewModel extends _$ProductTryOnViewModel {
 
   void dismissError() => state = state.copyWith(clearError: true);
 
-  /// Asks for a page to open, and returns its URL.
-  ///
-  /// Returns null on failure, with the reason left in `state.error` for the
-  /// overlay to show.
-  Future<String?> requestTryOnUrl() async {
-    final product = state.product;
-    if (product == null || state.isLoading) return null;
+  /// Closes the try-on, leaving the user on the page they were reading.
+  void dismissResult() => state = state.copyWith(clearResult: true);
 
-    state = state.copyWith(isLoading: true, clearError: true);
+  /// Asks the service to try the product on.
+  ///
+  /// The answer is an image, left in `state.resultUrl` for the view to show
+  /// over the page. On failure the reason is left in `state.error` instead.
+  Future<void> requestTryOn() async {
+    final product = state.product;
+    if (product == null || state.isLoading) return;
+
+    state = state.copyWith(
+      isLoading: true,
+      clearError: true,
+      clearResult: true,
+    );
     final response = await _repo.requestTryOn(product);
 
     // The browser can be gone by the time the service answers.
-    if (!ref.mounted) return null;
+    if (!ref.mounted) return;
 
     if (response.isSuccess && response.data != null) {
-      state = state.copyWith(isLoading: false);
-      return response.data!.url;
+      state = state.copyWith(isLoading: false, resultUrl: response.data!.url);
+      return;
     }
 
     state = state.copyWith(
       isLoading: false,
       error: response.error ?? 'Try-on failed',
     );
-    return null;
   }
 }

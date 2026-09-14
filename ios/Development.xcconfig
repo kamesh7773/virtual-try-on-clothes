@@ -4,4 +4,4 @@ FLUTTER_TARGET=lib/main_development.dart
 ASSET_PREFIX=development
 BUNDLE_SUFFIX=.dev
 PRODUCT_BUNDLE_IDENTIFIER=com.livelook.app.dev
-DISPLAY_NAME=LiveLook Dev
+DISPLAY_NAME=Mirror Dev

@@ -49,7 +49,7 @@ class TryOnRepository extends BaseApiService {
       final result = TryOnResult.tryParse(response.data);
       if (result == null) {
         return ApiResponse.failure(
-          'The try-on service did not return a link',
+          'The try-on service did not return an image',
           statusCode: response.statusCode,
         );
       }

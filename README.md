@@ -17,27 +17,75 @@ platform view.
 
 ## How it works
 
-The app opens on a home screen with two modes: **Virtual Try-On**, the live
-Decart mirror described below, and **Web View**, an in-app browser for the
-sites in `WebDestinations`. A destination marked `promotesFramedLinks` — the
-mirror is — has the links it opens in its own embedded browser turned into
-real page loads, so a tapped style card lands on the retailer rather than on a
-blank frame. That only applies while the browser is on that destination's own
-host (`promotesFramedLinksOn`): once it has followed a link out, the frames
-belong to the site it landed on. Every page the browser opens is written silently to a local
-history, readable from **History** on the home screen. A page injected
+The app opens straight into the in-app browser on the mirror
+(`RouteGenerator.initialRoute`) — no menu in front of it, and no chrome of its
+own around it: no app bar, no address, no back control, since the site draws
+one itself. A back gesture walks the page history and closes the app from the
+first page. While a page is on its way a `WebLoadingCover` sits over the
+view, which otherwise paints nothing at all for the seconds a retailer's page
+takes to arrive — an empty screen that reads as a broken app rather than as
+waiting. It carries the wordmark and a segment shuttling along a track rather
+than a progress bar, because the web view reports no progress to fill one
+with, and it holds still for a user who has asked for less motion. It lifts on
+`onPageFinished`, on a failure, or after 20 seconds, whichever comes first.
+
+A failure here means the page is dead, not that a load was thrown away:
+`isPageFailure` drops the cancellations both platforms report down the same
+callback (`NSURLErrorCancelled`, `net::ERR_ABORTED`) and any error naming a
+page other than the one now loading. Going back from a retailer cancels
+whatever that page still had in flight, and without this the app answers a
+successful back with a "try again" screen over a page that loaded fine. Once the browser has followed a link off the
+destination's own site (`WebDestination.isOwnSite`), a `WebBackButton` floats
+over the page —
+on iOS the swipe gesture walks the app's routes, not the page history, so a
+retailer navigated several pages deep would otherwise have no way back. The other screens — **Virtual Try-On**, the live Decart mirror
+described below, and the browsing **History** — keep their routes and the home
+screen that lists them, but nothing opens on them yet.
+
+The mirror's four apparel cards hand their retailer link straight to the app:
+tapping one navigates nowhere and posts `{"category","url"}` to a JavaScript
+channel the site names **`ShopLink`**, which the app parses into a `ShopLink`
+and opens as a full page. Honoured only while the browser is on the
+destination's own site — every script on every page can reach that channel.
+
+Before the site did that, a card opened the retailer inside an embedded
+browser of its own, which rendered blank. A destination marked
+`promotesFramedLinks` — the mirror is — still has such framed links turned
+into real page loads, as a fallback for a page served from cache. That too
+only applies on the destination's own host (`promotesFramedLinksOn`): once the
+browser has followed a link out, the frames belong to the site it landed on. Every page the browser opens is written
+silently to a local history. A page injected
 into every site reports what the user tapped — the words on the card, the
 heading above it, and the page it happened on — so each row records not just
 the URL and its timings but the tap that led there. Tapping a row opens the
 full record: the tap, the timings, and the URL broken into path and query.
 
+A **flow** — one journey from the mirror out to a retailer — is reported to
+`ApiEndpoints.history` when it ends: when the user returns to the mirror to
+begin another, or when the app goes to the background. `HistoryFlowViewModel`
+follows the journey by visit id and reads the rows back from the history at
+the end, so each one carries the title and timings it only has once its page
+finished. A flow that never left the mirror is dropped rather than sent —
+somebody looking at the front page is not a journey — and a send that fails
+leaves its reason on the state without costing the local history anything.
+The envelope is documented for the backend in `docs/url-history-payload.md`.
+
 On a page that publishes a product — its `Product` JSON-LD or its OpenGraph
-tags — the browser offers a **try-on** over it. Tapping downloads the product
+tags — the browser offers a **try-on** over it. The page is read on a timer,
+on every bridge injection, and the bridge itself goes in partway through the
+load (`_bridgeProgress`) as well as on `onUrlChange`, so neither a page whose
+load event is minutes away nor a site that navigates without loading is left
+unread. A scan that finds nothing on the page the offer was already made for
+is treated as the page still filling itself in; only leaving the page takes
+the offer away. Tapping downloads the product
 shot from the retailer and posts it to `ApiEndpoints.tryOn` as multipart form
 data, alongside the `category` the product's name resolves to — one of `golf`,
-`athletics`, `workout`, `sports` — then opens the page that service answers
-with. That endpoint is a full URL on a different host from Decart's, so the
-Decart key is not attached to it (`isDecartRequest`).
+`athletics`, `workout`, `sports`. The service answers with an image, which a
+`TryOnPreview` lays over the page: zoomable, closed by the cross in its corner
+or by a back gesture, and leaving the user on the product page they were
+reading rather than navigating them off it. That endpoint is a full URL on a
+different host from Decart's, so the Decart key is not attached to it
+(`isDecartRequest`).
 
 ```
  Flutter (Dart)                  Platform channels              Native

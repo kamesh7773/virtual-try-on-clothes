@@ -62,8 +62,12 @@ class UrlVisit {
     id: json['id'] as String,
     url: json['url'] as String,
     destinationId: json['destinationId'] as String? ?? '',
+    // Written as UTC; read back as local so the history screen shows the
+    // time the user was actually browsing. Rows written before this carry no
+    // zone and parse as local already, which is what they were.
     openedAt:
-        DateTime.tryParse(json['openedAt'] as String? ?? '') ?? DateTime.now(),
+        DateTime.tryParse(json['openedAt'] as String? ?? '')?.toLocal() ??
+        DateTime.now(),
     title: json['title'] as String?,
     loadTime: json['loadTimeMs'] == null
         ? null
@@ -80,7 +84,9 @@ class UrlVisit {
     'id': id,
     'url': url,
     'destinationId': destinationId,
-    'openedAt': openedAt.toIso8601String(),
+    // UTC, with the zone on it: this JSON is both the local store and what
+    // goes to the backend, and a wall-clock time with no zone is not a time.
+    'openedAt': openedAt.toUtc().toIso8601String(),
     if (title != null) 'title': title,
     if (loadTime != null) 'loadTimeMs': loadTime!.inMilliseconds,
     if (error != null) 'error': error,

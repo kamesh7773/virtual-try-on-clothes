@@ -5,13 +5,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../../core/routes/routes.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../try_on/views/widgets/live_look_wordmark.dart';
+import '../../../core/widgets/mirror_wordmark.dart';
 import '../../web_view/models/web_destination.dart';
 import '../../web_view/view_models/url_history_view_model.dart';
 import '../../web_view/views/widgets/web_destination_menu.dart';
 import 'widgets/home_option_tile.dart';
 
-/// The app's front door: what LiveLook can do, and what it has already done.
+/// The app's front door: what Mirror can do, and what it has already done.
 ///
 /// The two modes carry no state of their own — the camera, the catalog and
 /// the browser each start on the screen that needs them. The history does,
@@ -41,7 +41,7 @@ class HomeScreen extends HookConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const LiveLookWordmark(fontSize: 30),
+              const MirrorWordmark(fontSize: 30),
               SizedBox(height: 6.h),
               Text(
                 'CHOOSE A MODE',

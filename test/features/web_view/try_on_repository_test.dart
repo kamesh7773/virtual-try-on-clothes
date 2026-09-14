@@ -105,7 +105,7 @@ void main() {
     expect(response.data!.url, 'https://mirror.maxaix.com/tryon/1');
   });
 
-  test('an answer without a link is a failure, not an empty success', () async {
+  test('an answer without an image is a failure, not an empty success', () async {
     final (repository, _) = _repository(
       StubHttpAdapter(body: {'status': 'queued'}),
     );
@@ -113,7 +113,7 @@ void main() {
     final response = await repository.requestTryOn(_product);
 
     expect(response.isSuccess, isFalse);
-    expect(response.error, contains('did not return a link'));
+    expect(response.error, contains('did not return an image'));
   });
 
   test('a shot the CDN refuses stops the request before it is sent', () async {

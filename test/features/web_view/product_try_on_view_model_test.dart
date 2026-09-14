@@ -60,18 +60,55 @@ void main() {
     expect(state.category, isNull);
   });
 
-  test('returns the link the service answers with', () async {
+  test('leaves the try-on image on the state for the preview', () async {
     final (container, _) = _container(
-      StubHttpAdapter(body: {'url': 'https://mirror.maxaix.com/tryon/1'}),
+      StubHttpAdapter(
+        body: {
+          'success': true,
+          'image': 'https://mirror.maxaix.com/images/Golf.png',
+          'url': 'https://mirror.maxaix.com/images/Golf.png',
+        },
+      ),
     );
     final viewModel = container.read(productTryOnViewModelProvider.notifier);
     viewModel.setProduct(_product);
 
-    final url = await viewModel.requestTryOnUrl();
+    await viewModel.requestTryOn();
+    final state = container.read(productTryOnViewModelProvider);
 
-    expect(url, 'https://mirror.maxaix.com/tryon/1');
-    expect(container.read(productTryOnViewModelProvider).isLoading, isFalse);
-    expect(container.read(productTryOnViewModelProvider).error, isNull);
+    expect(state.resultUrl, 'https://mirror.maxaix.com/images/Golf.png');
+    expect(state.hasResult, isTrue);
+    expect(state.isLoading, isFalse);
+    expect(state.error, isNull);
+  });
+
+  test('closing the try-on leaves the product it was for', () async {
+    final (container, _) = _container(
+      StubHttpAdapter(
+        body: {'image': 'https://mirror.maxaix.com/images/Golf.png'},
+      ),
+    );
+    final viewModel = container.read(productTryOnViewModelProvider.notifier);
+    viewModel.setProduct(_product);
+    await viewModel.requestTryOn();
+
+    viewModel.dismissResult();
+    final state = container.read(productTryOnViewModelProvider);
+
+    expect(state.hasResult, isFalse);
+    expect(state.canTryOn, isTrue);
+  });
+
+  test('asking again clears the try-on already on screen', () async {
+    final (container, _) = _container(
+      StubHttpAdapter(body: {'status': 'queued'}),
+    );
+    final viewModel = container.read(productTryOnViewModelProvider.notifier);
+    viewModel.setProduct(_product);
+
+    await viewModel.requestTryOn();
+
+    expect(container.read(productTryOnViewModelProvider).resultUrl, isNull);
   });
 
   test('a failure leaves the reason on the state for the overlay', () async {
@@ -81,12 +118,12 @@ void main() {
     final viewModel = container.read(productTryOnViewModelProvider.notifier);
     viewModel.setProduct(_product);
 
-    final url = await viewModel.requestTryOnUrl();
+    await viewModel.requestTryOn();
 
-    expect(url, isNull);
+    expect(container.read(productTryOnViewModelProvider).resultUrl, isNull);
     expect(
       container.read(productTryOnViewModelProvider).error,
-      contains('did not return a link'),
+      contains('did not return an image'),
     );
     expect(container.read(productTryOnViewModelProvider).isLoading, isFalse);
   });
@@ -96,11 +133,8 @@ void main() {
       StubHttpAdapter(body: {'url': 'https://mirror.maxaix.com/tryon/1'}),
     );
 
-    final url = await container
-        .read(productTryOnViewModelProvider.notifier)
-        .requestTryOnUrl();
+    await container.read(productTryOnViewModelProvider.notifier).requestTryOn();
 
-    expect(url, isNull);
     expect(adapter.postCount, 0);
   });
 
@@ -111,10 +145,7 @@ void main() {
     final viewModel = container.read(productTryOnViewModelProvider.notifier);
     viewModel.setProduct(_product);
 
-    await Future.wait([
-      viewModel.requestTryOnUrl(),
-      viewModel.requestTryOnUrl(),
-    ]);
+    await Future.wait([viewModel.requestTryOn(), viewModel.requestTryOn()]);
 
     expect(adapter.postCount, 1);
   });
@@ -125,7 +156,7 @@ void main() {
     );
     final viewModel = container.read(productTryOnViewModelProvider.notifier);
     viewModel.setProduct(_product);
-    await viewModel.requestTryOnUrl();
+    await viewModel.requestTryOn();
 
     viewModel.setProduct(
       const WebProduct(

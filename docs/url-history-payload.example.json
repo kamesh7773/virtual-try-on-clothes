@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "sentAt": "2026-09-12T11:42:07.318Z",
+  "app": {
+    "id": "com.maxaix.virtualTryOn.dev",
+    "version": "1.0.0",
+    "build": "12",
+    "flavor": "development"
+  },
+  "device": {
+    "platform": "android",
+    "osVersion": "15"
+  },
+  "visits": [
+    {
+      "id": "1789234927318000-3",
+      "url": "https://www.dickssportinggoods.com/p/walter-hagen-mens-performance-11-tailgate-print-golf-polo-24wahmprfrmnc11tlgpl/24wahmprfrmnc11tlgpl",
+      "destinationId": "mirror",
+      "openedAt": "2026-09-12T11:41:58.104Z",
+      "title": "Walter Hagen Men's Performance 11 Tailgate Print Golf Polo | Dick's Sporting Goods",
+      "loadTimeMs": 2140,
+      "trigger": "link",
+      "tappedLabel": "Walter Hagen Men's Performance 11 Tailgate Print Golf Polo",
+      "tappedContext": "Best Sellers",
+      "sourceUrl": "https://www.dickssportinggoods.com/f/mens-golf-polos",
+      "sourceTitle": "Men's Golf Polos | Dick's Sporting Goods"
+    },
+    {
+      "id": "1789234914006000-2",
+      "url": "https://www.dickssportinggoods.com/p/unavailable-item/00000000",
+      "destinationId": "mirror",
+      "openedAt": "2026-09-12T11:41:54.006Z",
+      "error": "net::ERR_NAME_NOT_RESOLVED",
+      "trigger": "link",
+      "tappedLabel": "Nike Dri-FIT Victory Golf Polo",
+      "tappedContext": "You may also like",
+      "sourceUrl": "https://www.dickssportinggoods.com/f/mens-golf-polos",
+      "sourceTitle": "Men's Golf Polos | Dick's Sporting Goods"
+    },
+    {
+      "id": "1789234901772000-1",
+      "url": "https://www.dickssportinggoods.com/f/mens-golf-apparel",
+      "destinationId": "mirror",
+      "openedAt": "2026-09-12T11:41:41.772Z",
+      "title": "Men's Golf Apparel | Dick's Sporting Goods",
+      "loadTimeMs": 3380,
+      "trigger": "element",
+      "tappedLabel": "Golf apparel",
+      "tappedContext": "Men's Apparel",
+      "sourceUrl": "https://mirror.maxaix.com/",
+      "sourceTitle": "Maxaix Mirror"
+    },
+    {
+      "id": "1789234810448000-0",
+      "url": "https://mirror.maxaix.com/",
+      "destinationId": "mirror",
+      "openedAt": "2026-09-12T11:40:10.448Z",
+      "title": "Maxaix Mirror",
+      "loadTimeMs": 1180,
+      "trigger": "direct"
+    }
+  ]
+}

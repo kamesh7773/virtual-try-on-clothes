@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/error_view.dart';
 import '../../../core/widgets/loading_widget.dart';
+import '../../../core/widgets/mirror_wordmark.dart';
 import '../../../core/widgets/stage_back_button.dart';
 import '../view_models/camera_state.dart';
 import '../view_models/camera_view_model.dart';
@@ -17,7 +18,6 @@ import 'widgets/camera_permission_gate.dart';
 import 'widgets/decart_video_view.dart';
 import 'widgets/garment_overlay_card.dart';
 import 'widgets/garment_strip.dart';
-import 'widgets/live_look_wordmark.dart';
 import 'widgets/session_controls.dart';
 
 /// The try-on screen.
@@ -115,7 +115,7 @@ class _Masthead extends StatelessWidget {
         children: [
           Column(
             children: [
-              const LiveLookWordmark(),
+              const MirrorWordmark(),
               SizedBox(height: 2.h),
               Text(
                 'VIRTUAL TRY-ON',

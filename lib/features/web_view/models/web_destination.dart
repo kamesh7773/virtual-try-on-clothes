@@ -19,16 +19,33 @@ class WebDestination {
   /// and promoting one would throw the user out of the page they are on.
   final bool promotesFramedLinks;
 
+  /// Whether this site lays itself out around the status bar and the home
+  /// indicator, so the browser can hand it the whole screen.
+  ///
+  /// Off by default, and deliberately: a retailer's page is written for a
+  /// browser with chrome above it, so its header lands under the clock when
+  /// given the full screen. Only a site written for this app knows the
+  /// notch is there.
+  final bool handlesOwnInsets;
+
   const WebDestination({
     required this.id,
     required this.title,
     required this.url,
     this.promotesFramedLinks = false,
+    this.handlesOwnInsets = false,
   });
 
   /// The bare host, shown under the title so the user can see where they are
   /// even after the site navigates somewhere else.
   String get host => Uri.parse(url).host;
+
+  /// Whether the browser is still on this destination's own pages.
+  ///
+  /// What separates the site the app opened from a retailer it followed a
+  /// link into — which is the line the floating back control appears on, and
+  /// the one frame promotion stops at.
+  bool isOwnSite(String currentHost) => currentHost == host;
 
   /// Whether framed links should be promoted while the browser is on [host].
   ///
@@ -39,7 +56,7 @@ class WebDestination {
   /// off the page they are reading and onto a widget rendered on its own,
   /// which reads as the screen going blank.
   bool promotesFramedLinksOn(String currentHost) =>
-      promotesFramedLinks && currentHost == host;
+      promotesFramedLinks && isOwnSite(currentHost);
 
   @override
   bool operator ==(Object other) =>
@@ -63,6 +80,7 @@ class WebDestinations {
     title: 'Mirror',
     url: 'https://mirror.maxaix.com/',
     promotesFramedLinks: true,
+    handlesOwnInsets: true,
   );
 
   static const WebDestination dicksSportingGoods = WebDestination(
@@ -72,4 +90,13 @@ class WebDestinations {
   );
 
   static const List<WebDestination> all = [mirror, dicksSportingGoods];
+
+  /// Whether the page currently on [host] can be handed the whole screen.
+  ///
+  /// Asked of the host the browser is on rather than the destination it was
+  /// opened with, because those part company the moment a link is followed:
+  /// a shopper who taps through from the mirror to a retailer is on someone
+  /// else's layout, and it needs the status bar kept clear again.
+  static bool handlesOwnInsets(String host) =>
+      all.any((d) => d.handlesOwnInsets && d.isOwnSite(host));
 }

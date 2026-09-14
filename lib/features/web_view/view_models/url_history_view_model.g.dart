@@ -57,7 +57,7 @@ final class UrlHistoryViewModelProvider
 }
 
 String _$urlHistoryViewModelHash() =>
-    r'0748dab5c5aaa8c17b167e613cbc6517a2a80daa';
+    r'14e35d88263fd560acb72b8b7c5ed73e91089090';
 
 /// Every page the in-app browser has opened, newest first.
 ///

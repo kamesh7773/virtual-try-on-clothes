@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -8,16 +11,21 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/stage_back_button.dart';
 import '../models/visit_trigger.dart';
+import '../models/shop_link.dart';
 import '../models/web_bridge_message.dart';
+import '../models/web_load_failure.dart';
 import '../models/web_destination.dart';
 import '../models/web_navigation_decision.dart';
 import '../models/web_product.dart';
 import '../models/web_tap_report.dart';
+import '../view_models/history_flow_view_model.dart';
 import '../view_models/product_try_on_view_model.dart';
 import '../view_models/url_history_view_model.dart';
 import 'widgets/try_on_overlay.dart';
+import 'widgets/try_on_preview.dart';
+import 'widgets/web_overlay_button.dart';
+import 'widgets/web_loading_cover.dart';
 
 /// An in-app browser for a single [WebDestination].
 ///
@@ -34,8 +42,17 @@ class WebViewScreen extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final failure = useState<String?>(null);
+    // The page the failure was for, so retrying asks for that one again.
+    final failedUrl = useState<String?>(null);
     final canGoBack = useState<bool>(false);
+    // True from the moment a page is asked for until it has something to
+    // paint. Starts true: the first page is already on its way.
+    final isLoading = useState<bool>(true);
+    // Which site the page is on, which is what tells a link the browser
+    // followed out apart from the destination's own pages.
+    final currentHost = useState<String>(destination.host);
     final history = ref.read(urlHistoryViewModelProvider.notifier);
+    final flow = ref.read(historyFlowViewModelProvider.notifier);
     final tryOn = ref.watch(productTryOnViewModelProvider);
     final tryOnViewModel = ref.read(productTryOnViewModelProvider.notifier);
 
@@ -58,13 +75,35 @@ class WebViewScreen extends HookConsumerWidget {
       return null;
     }, const []);
 
+    // A journey the user walks away from is still a journey. Reported when
+    // the app goes to the background, which is the only ending the browser
+    // itself never sees — every other one is a return to the mirror.
+    useOnAppLifecycleStateChange((_, current) {
+      if (current == AppLifecycleState.paused ||
+          current == AppLifecycleState.detached) {
+        flow.completeFlow();
+      }
+    });
+
+    // A page that never reports back would otherwise leave the cover up for
+    // good, hiding whatever did paint behind it. The cover is only a cover:
+    // dropping it late is recoverable, keeping it forever is not.
+    useEffect(() {
+      if (!isLoading.value) return null;
+      final timer = Timer(_loadCoverLimit, () => isLoading.value = false);
+      return timer.cancel;
+    }, [isLoading.value]);
+
     // Tied to the URL so the controller — and the page it holds — survives
     // every rebuild this screen does.
     final controller = useMemoized(
       () => _createController(
         destination: destination,
         failure: failure,
+        failedUrl: failedUrl,
         canGoBack: canGoBack,
+        isLoading: isLoading,
+        currentHost: currentHost,
         pendingTap: pendingTap,
         pendingTapAt: pendingTapAt,
         onProduct: tryOnViewModel.setProduct,
@@ -79,6 +118,13 @@ class WebViewScreen extends HookConsumerWidget {
             sourceTitle: tap?.sourceTitle,
           );
           visitStartedAt.value = DateTime.now();
+
+          // The flow is the unit the backend is told about, and it is only a
+          // flow once it has left the mirror for a retailer.
+          flow.noteVisit(
+            visitId.value!,
+            isOwnSite: destination.isOwnSite(Uri.tryParse(url)?.host ?? ''),
+          );
         },
         onVisitFinished: (title) {
           final id = visitId.value;
@@ -104,106 +150,138 @@ class WebViewScreen extends HookConsumerWidget {
       [destination.url],
     );
 
-    return PopScope(
-      // Sitting on the first page, a back gesture leaves the screen — which
-      // is also what lets iOS run its swipe-back transition. Deeper in, the
-      // gesture is intercepted below and walks the page history instead.
-      canPop: !canGoBack.value,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        final navigator = Navigator.of(context);
-        if (await controller.canGoBack()) {
-          await controller.goBack();
-          return;
-        }
-        navigator.pop();
-      },
-      child: Scaffold(
-        backgroundColor: AppColors.stageBackground,
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // The only chrome left. Without it an iOS user who has browsed
-              // a page deep has no way back: the swipe gesture is off while
-              // there is page history to walk.
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20.w, vertical: 8.h),
-                child: const StageBackButton(),
-              ),
-              Expanded(
-                child: _Frame(
-                  child: Stack(
-                    children: [
-                      Positioned.fill(
-                        child: failure.value != null
-                            ? _LoadFailure(
-                                message: failure.value!,
-                                onRetry: () {
-                                  failure.value = null;
-                                  controller.loadRequest(
-                                    Uri.parse(destination.url),
-                                  );
-                                },
-                              )
-                            : WebViewWidget(controller: controller),
-                      ),
-                      if (tryOn.canTryOn && failure.value == null)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: TryOnOverlay(
-                              product: tryOn.product!,
-                              category: tryOn.category!,
-                              isLoading: tryOn.isLoading,
-                              onTap: () async {
-                                final product = tryOn.product!;
-                                final category = tryOn.category!;
-                                final url = await tryOnViewModel
-                                    .requestTryOnUrl();
-                                if (!context.mounted) return;
+    // Asked of where the browser is now, not of what opened it: following a
+    // link off the mirror lands on a layout that needs the status bar kept
+    // clear again, and going back gives the screen away again.
+    final edgeToEdge = WebDestinations.handlesOwnInsets(currentHost.value);
 
-                                if (url == null) {
-                                  final error = ref
-                                      .read(productTryOnViewModelProvider)
-                                      .error;
-                                  _showMessage(
-                                    context,
-                                    error ?? 'Try-on failed',
-                                    isError: true,
-                                  );
-                                  tryOnViewModel.dismissError();
-                                  return;
-                                }
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // The stage is black, and the app now opens on it — dark status bar
+      // icons would be invisible against it from the first frame.
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: AppColors.stageBackground,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: PopScope(
+        // Deeper than the first page, a back gesture walks the page history
+        // instead of leaving. On the first page it is let through, which on
+        // Android closes the app the way leaving a site's home page should.
+        canPop: !canGoBack.value && !tryOn.hasResult,
+        onPopInvokedWithResult: (didPop, _) async {
+          if (didPop) return;
+          final navigator = Navigator.of(context);
 
-                                // Filed before the load so the history records
-                                // the try-on as what it was, not as the site
-                                // navigating itself.
-                                pendingTap.value = WebTapReport(
-                                  promote: true,
-                                  url: url,
-                                  trigger: VisitTrigger.element,
-                                  label:
-                                      'Try-on (${category.wireName}) · '
-                                      '${product.title}',
-                                  context: product.brand,
-                                  sourceUrl: product.pageUrl,
-                                  sourceTitle: product.title,
-                                );
-                                pendingTapAt.value = DateTime.now();
-                                await controller.loadRequest(Uri.parse(url));
-                              },
-                            ),
-                          ),
-                        ),
-                    ],
+          // The try-on lies over the page, so it is what a back gesture is
+          // asking to leave — not the page underneath it.
+          if (ref.read(productTryOnViewModelProvider).hasResult) {
+            tryOnViewModel.dismissResult();
+            return;
+          }
+          if (await controller.canGoBack()) {
+            await controller.goBack();
+            return;
+          }
+          navigator.pop();
+        },
+        child: Scaffold(
+          backgroundColor: AppColors.stageBackground,
+          // No chrome and no padding around the page, and the bottom is
+          // never inset: a page that stops above the home indicator reads
+          // as letterboxed, which is the look this screen has no chrome in
+          // order to avoid. The top is inset only for a site that does not
+          // know the status bar is there — see [WebDestinations
+          // .handlesOwnInsets].
+          body: SafeArea(
+            top: !edgeToEdge,
+            bottom: false,
+            child: _Frame(
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: failure.value != null
+                        ? _LoadFailure(
+                            message: failure.value!,
+                            onRetry: () {
+                              final retry = failedUrl.value ?? destination.url;
+                              failure.value = null;
+                              isLoading.value = true;
+                              controller.loadRequest(Uri.parse(retry));
+                            },
+                          )
+                        : WebViewWidget(controller: controller),
                   ),
-                ),
+                  // Only once the browser has followed a link off the
+                  // destination's own site. The destination draws a back
+                  // control of its own, and on its first page there is
+                  // nothing behind it to go back to.
+                  if (failure.value == null &&
+                      canGoBack.value &&
+                      !destination.isOwnSite(currentHost.value))
+                    Positioned(
+                      // The page runs under the status bar, but this does not:
+                      // a control sitting behind the clock is a control that
+                      // cannot be read or reliably tapped.
+                      top: edgeToEdge
+                          ? MediaQuery.paddingOf(context).top + 10.h
+                          : 10.h,
+                      left: 12.w,
+                      child: WebOverlayButton(
+                        icon: Icons.arrow_back_ios_new_rounded,
+                        label: 'Back',
+                        onTap: controller.goBack,
+                      ),
+                    ),
+                  if (tryOn.canTryOn && failure.value == null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: TryOnOverlay(
+                          product: tryOn.product!,
+                          category: tryOn.category!,
+                          isLoading: tryOn.isLoading,
+                          onTap: () async {
+                            await tryOnViewModel.requestTryOn();
+                            if (!context.mounted) return;
+
+                            // The answer is an image, shown by the preview
+                            // below; only a failure needs saying out loud.
+                            final error = ref
+                                .read(productTryOnViewModelProvider)
+                                .error;
+                            if (error == null) return;
+
+                            _showMessage(context, error, isError: true);
+                            tryOnViewModel.dismissError();
+                          },
+                        ),
+                      ),
+                    ),
+                  // Over the page and over its controls: the view keeps
+                  // loading underneath, and there is nothing for a back
+                  // control or a try-on offer to act on until it arrives.
+                  // The cover lifts the moment the page has something to
+                  // show, or at the limit above, which is what keeps a page
+                  // that never reports back from hiding them for good.
+                  if (isLoading.value && failure.value == null)
+                    const Positioned.fill(child: WebLoadingCover()),
+                  // Last in the stack, and so over everything else: while a
+                  // try-on is up it is the only thing to look at.
+                  if (tryOn.resultUrl != null)
+                    Positioned.fill(
+                      child: TryOnPreview(
+                        imageUrl: tryOn.resultUrl!,
+                        onClose: tryOnViewModel.dismissResult,
+                      ),
+                    ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -211,12 +289,13 @@ class WebViewScreen extends HookConsumerWidget {
   }
 }
 
-/// The page, separated from the app's chrome by a hairline and nothing else.
+/// The page, and nothing around it.
 ///
 /// Deliberately edge to edge: side gutters shrink the layout viewport, and a
 /// site with a minimum width — most retail sites carry one — answers that by
 /// overflowing rather than reflowing, which reads as content cut off at the
-/// right edge.
+/// right edge. Not even a hairline at the top: there is no app chrome left
+/// for it to separate the page from.
 class _Frame extends StatelessWidget {
   final Widget child;
 
@@ -225,10 +304,7 @@ class _Frame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(
-        color: AppColors.stageSurface,
-        border: Border(top: BorderSide(color: AppColors.stageBorder)),
-      ),
+      decoration: const BoxDecoration(color: AppColors.stageSurface),
       child: ClipRect(child: child),
     );
   }
@@ -237,7 +313,10 @@ class _Frame extends StatelessWidget {
 WebViewController _createController({
   required WebDestination destination,
   required ValueNotifier<String?> failure,
+  required ValueNotifier<String?> failedUrl,
   required ValueNotifier<bool> canGoBack,
+  required ValueNotifier<bool> isLoading,
+  required ValueNotifier<String> currentHost,
   required bool Function() isMounted,
   required ObjectRef<WebTapReport?> pendingTap,
   required ObjectRef<DateTime?> pendingTapAt,
@@ -250,10 +329,13 @@ WebViewController _createController({
   // Assigned on the next line; the delegate's callbacks only run long after.
   late final WebViewController controller;
 
-  // Where the main frame is right now, which is what a framed link is judged
-  // against. `onPageStarted` only fires for the main frame, so this stays the
-  // page's own host.
-  var currentHost = destination.host;
+  // `currentHost` is where the main frame is right now — what a framed link
+  // is judged against, and what the floating back control keys off.
+  // `onPageStarted` only fires for the main frame, so it stays the page's own
+  // host rather than following a tracker into an iframe.
+
+  // The page the user is looking at, recorded as the source of a tap.
+  var currentUrl = destination.url;
 
   // The last link promoted out of a frame. A page that re-inserts the same
   // iframe while the promoted page is still loading would otherwise ask for
@@ -285,8 +367,10 @@ WebViewController _createController({
           final action = decideWebNavigation(
             url: request.url,
             isMainFrame: request.isMainFrame,
-            currentHost: currentHost,
-            promotesFramedLinks: destination.promotesFramedLinksOn(currentHost),
+            currentHost: currentHost.value,
+            promotesFramedLinks: destination.promotesFramedLinksOn(
+              currentHost.value,
+            ),
           );
 
           switch (action) {
@@ -303,8 +387,38 @@ WebViewController _createController({
               return NavigationDecision.prevent;
           }
         },
+        // A retail page's load event can be minutes away — trackers, video,
+        // lazy images — and waiting for it to inject leaves the user on a
+        // product page the app has not looked at yet. Once the page is
+        // mostly there it is worth looking at; the script installs once and
+        // the rest of these only ask it to scan again.
+        onProgress: (progress) {
+          if (progress < _bridgeProgress) return;
+          _applyNativeFeel(controller);
+          _applyBridge(
+            controller,
+            promote: destination.promotesFramedLinksOn(currentHost.value),
+          );
+        },
+        // A site that navigates without loading — most retailers, once they
+        // are running — reports itself here and nowhere else.
+        onUrlChange: (change) {
+          final url = change.url;
+          if (url == null || url.isEmpty) return;
+          if (kDebugMode) debugPrint('[web] url change → $url');
+
+          currentUrl = url;
+          currentHost.value = Uri.tryParse(url)?.host ?? currentHost.value;
+          _applyBridge(
+            controller,
+            promote: destination.promotesFramedLinksOn(currentHost.value),
+          );
+        },
         onPageStarted: (url) {
-          currentHost = Uri.tryParse(url)?.host ?? destination.host;
+          if (kDebugMode) debugPrint('[web] page started → $url');
+          isLoading.value = true;
+          currentUrl = url;
+          currentHost.value = Uri.tryParse(url)?.host ?? destination.host;
           lastPromoted = null;
           failure.value = null;
 
@@ -335,14 +449,16 @@ WebViewController _createController({
           _applyNativeFeel(controller);
           _applyBridge(
             controller,
-            promote: destination.promotesFramedLinksOn(currentHost),
+            promote: destination.promotesFramedLinksOn(currentHost.value),
           );
         },
-        onPageFinished: (_) {
+        onPageFinished: (url) {
+          if (kDebugMode) debugPrint('[web] page finished → $url');
+          isLoading.value = false;
           _applyNativeFeel(controller);
           _applyBridge(
             controller,
-            promote: destination.promotesFramedLinksOn(currentHost),
+            promote: destination.promotesFramedLinksOn(currentHost.value),
           );
           // The title is only worth recording once the page has one, which is
           // why the visit is completed here rather than on the first byte.
@@ -358,12 +474,22 @@ WebViewController _createController({
           });
         },
         onWebResourceError: (error) {
-          // A blocked tracker or a missing image fails the same way a dead
-          // page does; only the main frame is worth an error screen.
-          if (error.isForMainFrame != true) return;
+          if (kDebugMode) {
+            debugPrint(
+              '[web] error ${error.errorCode} ${error.errorType?.name} '
+              'main=${error.isForMainFrame} url=${error.url} '
+              '"${error.description}" (loading $currentUrl)',
+            );
+          }
+          if (!isPageFailure(error, loadingUrl: currentUrl)) return;
+
+          isLoading.value = false;
           final message = error.description.isEmpty
               ? 'This page could not be loaded.'
               : error.description;
+          // What to try again, which is the page that failed and not the
+          // site's front door.
+          failedUrl.value = error.url ?? currentUrl;
           failure.value = message;
           onVisitFailed(message);
         },
@@ -423,8 +549,8 @@ WebViewController _createController({
           if (!report.promote) return;
           // The bridge is reachable by every script on the page, so the
           // decision is made here too, not trusted from the message.
-          if (!destination.promotesFramedLinksOn(currentHost)) return;
-          if (uri.host.isEmpty || uri.host == currentHost) return;
+          if (!destination.promotesFramedLinksOn(currentHost.value)) return;
+          if (uri.host.isEmpty || uri.host == currentHost.value) return;
           if (report.url == lastPromoted) return;
 
           lastPromoted = report.url;
@@ -433,6 +559,35 @@ WebViewController _createController({
         case null:
           return;
       }
+    },
+  );
+
+  controller.addJavaScriptChannel(
+    _shopLinkChannel,
+    onMessageReceived: (message) {
+      // The channel is reachable by every script on every page, and only the
+      // destination's own site is party to this contract.
+      if (!destination.isOwnSite(currentHost.value)) return;
+
+      final link = ShopLink.tryParse(message.message);
+      if (link == null) {
+        debugPrint('[shop-link] ignored: ${message.message}');
+        return;
+      }
+      debugPrint('[shop-link] ${link.label} → ${link.url}');
+
+      // Filed before the load so the history records the card that was
+      // tapped, rather than the retailer appearing out of nowhere.
+      pendingTap.value = WebTapReport(
+        promote: true,
+        url: link.url.toString(),
+        trigger: VisitTrigger.element,
+        label: link.label,
+        context: "Men's Apparel",
+        sourceUrl: currentUrl,
+      );
+      pendingTapAt.value = DateTime.now();
+      controller.loadRequest(link.url);
     },
   );
 
@@ -483,13 +638,19 @@ const String _nativeFeelScript = r"""
   if (!d.head) return;
 
   // Pages written for a desktop report a viewport wider than the phone, and
-  // that width is what the user ends up dragging sideways. Sites that ship
-  // their own viewport tag are left alone.
-  if (!d.querySelector('meta[name="viewport"]')) {
-    var meta = d.createElement('meta');
-    meta.name = 'viewport';
-    meta.content = 'width=device-width, initial-scale=1, viewport-fit=cover';
-    d.head.appendChild(meta);
+  // that width is what the user ends up dragging sideways.
+  var viewport = d.querySelector('meta[name="viewport"]');
+  if (!viewport) {
+    viewport = d.createElement('meta');
+    viewport.name = 'viewport';
+    viewport.content = 'width=device-width, initial-scale=1, viewport-fit=cover';
+    d.head.appendChild(viewport);
+  } else if (!/viewport-fit/.test(viewport.content || '')) {
+    // A site's own viewport tag is otherwise left alone, but without this
+    // one key iOS lays the page out inside the safe area and paints the
+    // insets itself — black bars above and below a full-bleed page, which
+    // is exactly what this screen has no chrome in order to avoid.
+    viewport.content = (viewport.content || '') + ',viewport-fit=cover';
   }
 
   // Nothing here constrains the page's width. Clamping `html`/`body` does
@@ -540,8 +701,25 @@ void _applyNativeFeel(WebViewController controller) {
   controller.runJavaScript(_nativeFeelScript).catchError((Object _) {});
 }
 
+/// How far into a page load the bridge is worth injecting, in percent.
+///
+/// Early enough that a page which never finishes loading is still read, late
+/// enough that there is a document with something in it to read.
+const int _bridgeProgress = 60;
+
+/// How long the loading cover may stay up without the page reporting back.
+/// Past this the page is left to show whatever it has, however little.
+const Duration _loadCoverLimit = Duration(seconds: 20);
+
 /// Name of the channel the page posts tapped links to. Must match the script.
 const String _bridgeChannel = 'LiveLookBridge';
+
+/// Name of the channel the mirror posts its apparel links to.
+///
+/// Spelled by the site, not by this app: the page calls
+/// `ShopLink.postMessage(...)`, so renaming this silently stops the four
+/// apparel cards from opening anything.
+const String _shopLinkChannel = 'ShopLink';
 
 /// Reports what the user tapped, and — where the destination asks for it —
 /// hands the link over so the app can open it as a full page.
@@ -551,10 +729,27 @@ const String _bridgeChannel = 'LiveLookBridge';
 /// and on Android a scripted iframe is never reported at all.
 const String _bridgeScript = r"""
 (function () {
+  // Before the install guard, so it runs on every injection and not only on
+  // the first: a page restored from the back-forward cache comes back with
+  // the bridge already installed, and — until this — with the sheet the tap
+  // that left it put up.
+  var stale = document.getElementById('livelook-cover');
+  if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
+
   if (window.__livelookBridge) return;
   if (typeof LiveLookBridge === 'undefined') return;
   if (!document.documentElement) return;
   window.__livelookBridge = true;
+
+  // The page is not reloaded on the way back, it is restored, so the sheet
+  // is still in the DOM and the timer set to lift it was frozen with the
+  // page — it has the rest of its 2.5 seconds left to run, and only once the
+  // page is visible again. This lifts it on the frame the page comes back.
+  //
+  // On the way out rather than on the way back would be earlier, but
+  // `pagehide` can fire while the old page is still the one on screen, which
+  // is the moment the sheet is there to cover.
+  window.addEventListener('pageshow', uncover);
 
   var promoting = window.__livelookPromote === true;
   console.log('livelook: bridge installed on ' + location.href +
@@ -612,6 +807,11 @@ const String _bridgeScript = r"""
     return words(page).slice(0, 120) || document.title || '';
   }
 
+  function uncover() {
+    var sheet = document.getElementById('livelook-cover');
+    if (sheet && sheet.parentNode) sheet.parentNode.removeChild(sheet);
+  }
+
   // Between handing the link over and the next page painting, the page is
   // still showing whatever it was about to do with it — the blank in-page
   // browser, mid-animation. Covering it makes the tap read as one step.
@@ -628,11 +828,10 @@ const String _bridgeScript = r"""
     host.appendChild(sheet);
 
     // If the app decided not to navigate after all, the page must not be left
-    // under a sheet it cannot lift.
-    setTimeout(function () {
-      var stale = document.getElementById('livelook-cover');
-      if (stale && stale.parentNode) stale.parentNode.removeChild(stale);
-    }, 2500);
+    // under a sheet it cannot lift. Only for that case: a page that does
+    // navigate is uncovered when it comes back, by the listener above,
+    // because this timer is frozen for as long as the page is away.
+    setTimeout(uncover, 2500);
   }
 
   function report(url, trigger, node, promote) {
@@ -777,12 +976,22 @@ const String _bridgeScript = r"""
   }
 
   var lastProductKey = null;
+  var lastProductUrl = null;
 
   function reportProduct() {
     var product = productFromStructuredData() || productFromMeta();
     var key = product ? product.image + '|' + location.href : '';
+
+    // A retail page rewrites itself for minutes after it loads — a carousel
+    // arrives, a script replaces the JSON-LD — and a scan that lands mid-way
+    // finds nothing. On the page the offer was already made for, that is the
+    // page still filling itself in, not the product going away. Only leaving
+    // the page takes the offer with it.
+    if (!product && lastProductKey && location.href === lastProductUrl) return;
+
     if (key === lastProductKey) return;
     lastProductKey = key;
+    lastProductUrl = location.href;
 
     var payload = { type: 'product', url: location.href };
     if (product) {
@@ -793,9 +1002,15 @@ const String _bridgeScript = r"""
       payload.price = product.price;
       payload.currency = product.currency;
       console.log('livelook: product ' + product.title);
+    } else {
+      console.log('livelook: no product on ' + location.href);
     }
     LiveLookBridge.postMessage(JSON.stringify(payload));
   }
+
+  // Called again from the app on every injection, so a page that arrives
+  // in pieces is looked at each time rather than only on its own schedule.
+  window.__livelookScan = reportProduct;
 
   reportProduct();
   // Retail pages fill themselves in after the first paint, and a single-page
@@ -914,7 +1129,13 @@ void _applyBridge(WebViewController controller, {required bool promote}) {
   // The flag has to be set before the script reads it, and a page reload
   // wipes both, so they travel together.
   controller
-      .runJavaScript('window.__livelookPromote = $promote;\n$_bridgeScript')
+      .runJavaScript(
+        'window.__livelookPromote = $promote;\n'
+        '$_bridgeScript\n'
+        // Installed already on a page the app is injecting into again: the
+        // script returns at its own guard, so the scan is asked for here.
+        'if (window.__livelookScan) window.__livelookScan();',
+      )
       .catchError((Object _) {});
 }
 

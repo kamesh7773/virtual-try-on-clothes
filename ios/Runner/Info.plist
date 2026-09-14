@@ -30,7 +30,7 @@
 		<key>ITSAppUsesNonExemptEncryption</key>
 		<false/>
 		<key>NSCameraUsageDescription</key>
-		<string>LiveLook uses your camera to show garments on you in real time.</string>
+		<string>Mirror uses your camera to show garments on you in real time.</string>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>The live try-on session negotiates an audio track alongside video. No audio is recorded or sent.</string>
 		<key>LSRequiresIPhoneOS</key>

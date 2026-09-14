@@ -30,4 +30,11 @@ class ApiEndpoints {
   /// accepts) and `image` (the product shot as a file). Takes no token, and
   /// answers with the URL of the page to open.
   static const String tryOn = 'https://mirror.maxaix.com/api/tryon';
+
+  /// Where a finished browsing flow is reported. A full URL for the same
+  /// reason as [tryOn], and takes no token either.
+  ///
+  /// POST, `application/json` — the envelope documented in
+  /// `docs/url-history-payload.md`, carrying the visits of one flow.
+  static const String history = 'https://mirror.maxaix.com/api/history';
 }

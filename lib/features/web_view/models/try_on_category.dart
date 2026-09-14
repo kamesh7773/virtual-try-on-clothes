@@ -10,6 +10,16 @@ enum TryOnCategory {
 
   /// What goes in the request's `category` field.
   String get wireName => name;
+
+  /// Reads back a [wireName], from the try-on service or from the mirror's
+  /// shop links. Null rather than a guess: a name this app does not know is
+  /// a contract that has changed, not sportswear.
+  static TryOnCategory? fromWireName(String? wireName) {
+    for (final category in values) {
+      if (category.wireName == wireName) return category;
+    }
+    return null;
+  }
 }
 
 /// Words that put a product in a category, checked in this order.

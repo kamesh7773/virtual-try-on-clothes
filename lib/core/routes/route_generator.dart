@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../features/home/views/home_screen.dart';
 import '../../features/try_on/views/try_on_screen.dart';
+import '../../features/web_view/models/web_destination.dart';
 import '../../features/web_view/views/url_history_screen.dart';
 import '../../features/web_view/views/url_visit_detail_screen.dart';
 import '../../features/web_view/views/web_view_screen.dart';
@@ -10,6 +11,16 @@ import 'routes.dart';
 
 class RouteGenerator {
   RouteGenerator._();
+
+  /// What the app opens on: the mirror, straight away.
+  ///
+  /// There is no menu in front of it — the browser *is* the app — so the
+  /// first route is built with its destination already chosen rather than
+  /// left to `initialRoute`, which carries a name and no arguments.
+  static const RouteSettings initialRoute = RouteSettings(
+    name: Routes.webView,
+    arguments: WebViewScreenArgs(destination: WebDestinations.mirror),
+  );
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
     switch (settings.name) {

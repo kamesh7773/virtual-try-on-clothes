@@ -8,7 +8,6 @@ import 'package:toastification/toastification.dart';
 import 'core/config/env.dart';
 import 'core/constants/app_constants.dart';
 import 'core/routes/route_generator.dart';
-import 'core/routes/routes.dart';
 import 'core/services/navigation_service.dart';
 import 'core/theme/app_theme.dart';
 
@@ -45,7 +44,9 @@ class VirtualTryOnApp extends ConsumerWidget {
           ],
           supportedLocales: const [Locale('en', 'US')],
           locale: const Locale('en', 'US'),
-          initialRoute: Routes.home,
+          onGenerateInitialRoutes: (_) => [
+            RouteGenerator.generateRoute(RouteGenerator.initialRoute),
+          ],
           onGenerateRoute: RouteGenerator.generateRoute,
           builder: (context, child) {
             final content = ToastificationWrapper(

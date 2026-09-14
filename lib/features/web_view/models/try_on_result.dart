@@ -1,9 +1,10 @@
 import 'package:flutter/foundation.dart';
 
-/// What the try-on service answers with: a page to open.
+/// What the try-on service answers with: the try-on itself, as an image.
 @immutable
 class TryOnResult {
-  /// Absolute, or a path to be completed against the service's own host.
+  /// Where the try-on image is. Absolute, or a path to be completed against
+  /// the service's own host.
   final String url;
 
   const TryOnResult({required this.url});
@@ -16,7 +17,11 @@ class TryOnResult {
     return url == null ? null : TryOnResult(url: url);
   }
 
+  /// `image` leads: the service sends the try-on as a picture, and a body
+  /// that names both is naming the picture there. The rest are the shapes it
+  /// has answered in before, kept so a renamed field does not break the app.
   static const List<String> _urlKeys = [
+    'image',
     'url',
     'tryOnUrl',
     'resultUrl',

@@ -50,7 +50,7 @@ class CameraPermissionGate extends StatelessWidget {
               Text(
                 needsSettings
                     ? 'Camera access is turned off. Enable it in Settings to try garments on.'
-                    : 'LiveLook needs your camera to show garments on you.',
+                    : 'Mirror needs your camera to show garments on you.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12.sp,

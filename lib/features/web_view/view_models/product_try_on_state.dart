@@ -12,8 +12,12 @@ class ProductTryOnState {
   /// Null with no product.
   final TryOnCategory? category;
 
-  /// True while the try-on service is being asked for a link.
+  /// True while the try-on service is being asked for a try-on.
   final bool isLoading;
+
+  /// The try-on image the service answered with, shown over the page until
+  /// the user closes it. Null when there is nothing to show.
+  final String? resultUrl;
 
   final String? error;
 
@@ -21,6 +25,7 @@ class ProductTryOnState {
     this.product,
     this.category,
     this.isLoading = false,
+    this.resultUrl,
     this.error,
   });
 
@@ -30,16 +35,21 @@ class ProductTryOnState {
   /// it would be sent as.
   bool get canTryOn => product != null && category != null;
 
+  bool get hasResult => resultUrl != null;
+
   ProductTryOnState copyWith({
     WebProduct? product,
     TryOnCategory? category,
     bool? isLoading,
+    String? resultUrl,
     String? error,
+    bool clearResult = false,
     bool clearError = false,
   }) => ProductTryOnState(
     product: product ?? this.product,
     category: category ?? this.category,
     isLoading: isLoading ?? this.isLoading,
+    resultUrl: clearResult ? null : (resultUrl ?? this.resultUrl),
     error: clearError ? null : (error ?? this.error),
   );
 
@@ -50,8 +60,10 @@ class ProductTryOnState {
           other.product == product &&
           other.category == category &&
           other.isLoading == isLoading &&
+          other.resultUrl == resultUrl &&
           other.error == error;
 
   @override
-  int get hashCode => Object.hash(product, category, isLoading, error);
+  int get hashCode =>
+      Object.hash(product, category, isLoading, resultUrl, error);
 }

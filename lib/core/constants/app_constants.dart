@@ -1,7 +1,7 @@
 class AppConstants {
   AppConstants._();
 
-  static const String appName = 'LiveLook';
+  static const String appName = 'Mirror';
 
   // Design reference size for ScreenUtil
   static const double designWidth = 375;

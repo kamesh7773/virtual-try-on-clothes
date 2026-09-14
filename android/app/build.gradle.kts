@@ -33,17 +33,17 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
-            resValue("string", "app_name", "LiveLook Dev")
+            resValue("string", "app_name", "Mirror Dev")
         }
         create("staging") {
             dimension = "environment"
             applicationIdSuffix = ".staging"
             versionNameSuffix = "-staging"
-            resValue("string", "app_name", "LiveLook Staging")
+            resValue("string", "app_name", "Mirror Staging")
         }
         create("production") {
             dimension = "environment"
-            resValue("string", "app_name", "LiveLook")
+            resValue("string", "app_name", "Mirror")
         }
     }
 

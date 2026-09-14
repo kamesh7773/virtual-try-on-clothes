@@ -1,5 +1,5 @@
 name: virtual_try_on
-description: "LiveLook — real-time virtual try-on powered by Decart."
+description: "Mirror — real-time virtual try-on powered by Decart."
 publish_to: "none"
 version: 1.0.0+1
 

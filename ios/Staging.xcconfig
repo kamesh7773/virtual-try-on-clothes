@@ -4,4 +4,4 @@ FLUTTER_TARGET=lib/main_staging.dart
 ASSET_PREFIX=staging
 BUNDLE_SUFFIX=.staging
 PRODUCT_BUNDLE_IDENTIFIER=com.livelook.app.staging
-DISPLAY_NAME=LiveLook Staging
+DISPLAY_NAME=Mirror Staging
