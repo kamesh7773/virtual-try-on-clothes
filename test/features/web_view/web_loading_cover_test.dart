@@ -23,9 +23,7 @@ void main() {
     expect(find.text('ONE MOMENT'), findsOneWidget);
   });
 
-  testWidgets('is opaque, so the page being left does not show through', (
-    tester,
-  ) async {
+  testWidgets('lets the page underneath show through, dimmed', (tester) async {
     await tester.pumpWidget(host(const WebLoadingCover()));
     await tester.pump();
 
@@ -39,7 +37,13 @@ void main() {
     );
     final gradient = (cover.decoration as BoxDecoration).gradient!;
 
-    expect(gradient.colors.every((color) => color.a == 1.0), isTrue);
+    // Not opaque: a page that paints without saying so is still readable
+    // under it. Not faint either: it has to read as a wait, and keep the
+    // wordmark legible over a white page.
+    for (final color in gradient.colors) {
+      expect(color.a, lessThan(1.0));
+      expect(color.a, greaterThanOrEqualTo(0.7));
+    }
   });
 
   testWidgets('the moving segment is actually drawn', (tester) async {

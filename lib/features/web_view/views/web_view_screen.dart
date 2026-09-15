@@ -45,8 +45,10 @@ class WebViewScreen extends HookConsumerWidget {
     // The page the failure was for, so retrying asks for that one again.
     final failedUrl = useState<String?>(null);
     final canGoBack = useState<bool>(false);
-    // True from the moment a page is asked for until it has something to
-    // paint. Starts true: the first page is already on its way.
+    // True from the moment a page is asked for until it has painted
+    // something — the page's first paint, not its `load` event, which on a
+    // retail site can be tens of seconds later. Starts true: the first page
+    // is already on its way.
     final isLoading = useState<bool>(true);
     // Which site the page is on, which is what tells a link the browser
     // followed out apart from the destination's own pages.
@@ -85,8 +87,8 @@ class WebViewScreen extends HookConsumerWidget {
       }
     });
 
-    // A page that never reports back would otherwise leave the cover up for
-    // good, hiding whatever did paint behind it. The cover is only a cover:
+    // A page that never reports a paint would otherwise leave the cover up
+    // until its `load` event, or for good. The cover is only a cover:
     // dropping it late is recoverable, keeping it forever is not.
     useEffect(() {
       if (!isLoading.value) return null;
@@ -265,11 +267,22 @@ class WebViewScreen extends HookConsumerWidget {
                   // Over the page and over its controls: the view keeps
                   // loading underneath, and there is nothing for a back
                   // control or a try-on offer to act on until it arrives.
-                  // The cover lifts the moment the page has something to
-                  // show, or at the limit above, which is what keeps a page
-                  // that never reports back from hiding them for good.
-                  if (isLoading.value && failure.value == null)
-                    const Positioned.fill(child: WebLoadingCover()),
+                  // The cover lifts the moment the page has painted, or at
+                  // the limit above, which is what keeps a page that never
+                  // reports back from hiding them for good. It fades rather
+                  // than pops: the page underneath is already showing
+                  // through it, and a cut would read as a flash.
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      ignoring: !isLoading.value,
+                      child: AnimatedSwitcher(
+                        duration: _coverFade,
+                        child: isLoading.value && failure.value == null
+                            ? const WebLoadingCover()
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
                   // Last in the stack, and so over everything else: while a
                   // try-on is up it is the only thing to look at.
                   if (tryOn.resultUrl != null)
@@ -344,6 +357,48 @@ WebViewController _createController({
 
   // The destination's own first page is opened by the app, not by a tap.
   var hasLoaded = false;
+
+  // Debug only: a clock on the lifecycle lines, so a log dump says how long
+  // each page took rather than only what order things came in.
+  final clock = Stopwatch()..start();
+  String stamp() => '[web +${clock.elapsedMilliseconds}ms]';
+
+  // The paint probe is re-sent on a clock after every page start, not only
+  // on progress ticks. On iOS page start fires while the old document is
+  // still the one scripts land in, and the progress observer that would
+  // carry the probe into the new one goes through a plugin path that has
+  // been seen to fail. A few timed sends land in the new document whatever
+  // the observers do; the probe itself installs once and no more.
+  final probeTimers = <Timer>[];
+  void cancelProbes() {
+    for (final timer in probeTimers) {
+      timer.cancel();
+    }
+    probeTimers.clear();
+  }
+
+  void scheduleProbes() {
+    cancelProbes();
+    for (final delay in _paintProbeRetries) {
+      probeTimers.add(Timer(delay, () => _applyPaintProbe(controller)));
+    }
+  }
+
+  // `load` on a page that has not painted is not a page to show. A retailer
+  // met for the first time answers with a blank interstitial that finishes
+  // in a moment and then loads the real page over itself; lifting the cover
+  // on that first `load` puts a white flash between two waits. So the
+  // finish only starts a short grace, and the probe is asked once more: a
+  // page that has painted answers inside the grace, a blank one does not,
+  // and the next page start cancels it.
+  Timer? finishGrace;
+  void lift() {
+    finishGrace?.cancel();
+    finishGrace = null;
+    cancelProbes();
+    if (isMounted()) isLoading.value = false;
+  }
+
   // The mirror asks for the camera through getUserMedia, which WKWebView only
   // runs inline and without a tap gesture when the configuration says so — and
   // the configuration is fixed at creation time, not settable later.
@@ -392,30 +447,37 @@ WebViewController _createController({
         // product page the app has not looked at yet. Once the page is
         // mostly there it is worth looking at; the script installs once and
         // the rest of these only ask it to scan again.
-        onProgress: (progress) {
+        onProgress: (progress) => _safely('onProgress', () {
+          // The paint probe goes in on every tick as well as on the clock
+          // above: whichever reaches the new document first wins, and the
+          // probe installs itself once per document and no more.
+          _applyPaintProbe(controller);
           if (progress < _bridgeProgress) return;
           _applyNativeFeel(controller);
           _applyBridge(
             controller,
             promote: destination.promotesFramedLinksOn(currentHost.value),
           );
-        },
+        }),
         // A site that navigates without loading — most retailers, once they
         // are running — reports itself here and nowhere else.
-        onUrlChange: (change) {
+        onUrlChange: (change) => _safely('onUrlChange', () {
           final url = change.url;
           if (url == null || url.isEmpty) return;
-          if (kDebugMode) debugPrint('[web] url change → $url');
+          if (kDebugMode) debugPrint('${stamp()} url change → $url');
 
           currentUrl = url;
           currentHost.value = Uri.tryParse(url)?.host ?? currentHost.value;
+          _applyPaintProbe(controller);
           _applyBridge(
             controller,
             promote: destination.promotesFramedLinksOn(currentHost.value),
           );
-        },
-        onPageStarted: (url) {
-          if (kDebugMode) debugPrint('[web] page started → $url');
+        }),
+        onPageStarted: (url) => _safely('onPageStarted', () {
+          if (kDebugMode) debugPrint('${stamp()} page started → $url');
+          finishGrace?.cancel();
+          finishGrace = null;
           isLoading.value = true;
           currentUrl = url;
           currentHost.value = Uri.tryParse(url)?.host ?? destination.host;
@@ -446,15 +508,22 @@ WebViewController _createController({
 
           // The head usually exists by now, so the page is styled before its
           // first paint. The script no-ops when it does not.
+          _applyPaintProbe(controller);
+          scheduleProbes();
           _applyNativeFeel(controller);
           _applyBridge(
             controller,
             promote: destination.promotesFramedLinksOn(currentHost.value),
           );
-        },
-        onPageFinished: (url) {
-          if (kDebugMode) debugPrint('[web] page finished → $url');
-          isLoading.value = false;
+        }),
+        onPageFinished: (url) => _safely('onPageFinished', () {
+          if (kDebugMode) debugPrint('${stamp()} page finished → $url');
+          // Usually long lifted by the paint probe. This is the backstop for
+          // a page that painted without saying so — see `finishGrace`.
+          cancelProbes();
+          _applyPaintProbe(controller);
+          finishGrace?.cancel();
+          finishGrace = Timer(_finishGrace, lift);
           _applyNativeFeel(controller);
           _applyBridge(
             controller,
@@ -472,17 +541,20 @@ WebViewController _createController({
             // screen — and the notifier — may be gone.
             if (isMounted()) canGoBack.value = value;
           });
-        },
-        onWebResourceError: (error) {
+        }),
+        onWebResourceError: (error) => _safely('onWebResourceError', () {
           if (kDebugMode) {
             debugPrint(
-              '[web] error ${error.errorCode} ${error.errorType?.name} '
+              '${stamp()} error ${error.errorCode} ${error.errorType?.name} '
               'main=${error.isForMainFrame} url=${error.url} '
               '"${error.description}" (loading $currentUrl)',
             );
           }
           if (!isPageFailure(error, loadingUrl: currentUrl)) return;
 
+          finishGrace?.cancel();
+          finishGrace = null;
+          cancelProbes();
           isLoading.value = false;
           final message = error.description.isEmpty
               ? 'This page could not be loaded.'
@@ -492,7 +564,7 @@ WebViewController _createController({
           failedUrl.value = error.url ?? currentUrl;
           failure.value = message;
           onVisitFailed(message);
-        },
+        }),
       ),
     );
 
@@ -517,14 +589,15 @@ WebViewController _createController({
     platform.setOnPlatformPermissionRequest(_handlePermissionRequest);
 
     // Release builds stay quiet; in debug the page's own console is the only
-    // window into what a site does when a link is tapped.
+    // window into what a site does when a link is tapped. `console.debug` is
+    // left out: a retailer's telemetry SDK writes hundreds of those per page,
+    // and each one crosses to Dart and through `debugPrint`'s throttle,
+    // burying the lines worth reading.
     if (kDebugMode) {
-      platform.setOnConsoleMessage(
-        (message) => debugPrint(
-          '[web] ${message.level.name}: '
-          '${message.message}',
-        ),
-      );
+      platform.setOnConsoleMessage((message) {
+        if (message.level == JavaScriptLogLevel.debug) return;
+        debugPrint('[web] ${message.level.name}: ${message.message}');
+      });
     }
   }
 
@@ -533,10 +606,19 @@ WebViewController _createController({
   // navigation delegate above never sees one.
   controller.addJavaScriptChannel(
     _bridgeChannel,
-    onMessageReceived: (message) {
+    onMessageReceived: _guarded(_bridgeChannel, (message) {
       switch (WebBridgeMessage.tryParse(message.message)) {
         case WebProductMessage(:final product):
           onProduct(product);
+
+        case WebPaintedMessage(:final url):
+          if (kDebugMode) debugPrint('${stamp()} painted → $url');
+          // A paint reported by the page being left — its probe outlives it
+          // until the next document commits — must not lift the cover off
+          // the one still on its way. The host is what tells them apart in
+          // the case that matters, the jump from the mirror to a retailer.
+          if (url.host != currentHost.value) return;
+          lift();
 
         case WebTapMessage(:final report):
           final uri = Uri.tryParse(report.url);
@@ -559,12 +641,12 @@ WebViewController _createController({
         case null:
           return;
       }
-    },
+    }),
   );
 
   controller.addJavaScriptChannel(
     _shopLinkChannel,
-    onMessageReceived: (message) {
+    onMessageReceived: _guarded(_shopLinkChannel, (message) {
       // The channel is reachable by every script on every page, and only the
       // destination's own site is party to this contract.
       if (!destination.isOwnSite(currentHost.value)) return;
@@ -588,11 +670,42 @@ WebViewController _createController({
       );
       pendingTapAt.value = DateTime.now();
       controller.loadRequest(link.url);
-    },
+    }),
   );
 
   controller.loadRequest(Uri.parse(destination.url));
   return controller;
+}
+
+/// Runs a navigation callback, keeping its failure on this side of the
+/// bridge. Same reason as [_guarded]: the platform reports a callback that
+/// threw as a bare native stack trace, and the Dart error is lost with it.
+void _safely(String callback, void Function() body) {
+  try {
+    body();
+  } catch (error, stack) {
+    debugPrint('[web] $callback failed: $error\n$stack');
+  }
+}
+
+/// Keeps a channel handler's failure on this side of the bridge.
+///
+/// An exception thrown from a channel callback goes back to the platform as
+/// a method failure, which on iOS is logged as a bare native stack trace
+/// with the Dart error nowhere in it. Caught here it is at least named, and
+/// a page's message that the app could not handle costs the app nothing
+/// more than that line.
+void Function(JavaScriptMessage) _guarded(
+  String channel,
+  void Function(JavaScriptMessage message) handler,
+) {
+  return (message) {
+    try {
+      handler(message);
+    } catch (error, stack) {
+      debugPrint('[web] $channel handler failed: $error\n$stack');
+    }
+  };
 }
 
 /// Says something once, over the page. Used only when the app has to report
@@ -707,9 +820,104 @@ void _applyNativeFeel(WebViewController controller) {
 /// enough that there is a document with something in it to read.
 const int _bridgeProgress = 60;
 
-/// How long the loading cover may stay up without the page reporting back.
-/// Past this the page is left to show whatever it has, however little.
-const Duration _loadCoverLimit = Duration(seconds: 20);
+/// How long the loading cover may stay up without the page reporting a
+/// paint. Past this the page is left to show whatever it has, however
+/// little. Ten seconds, not twenty: with the cover lifting on first paint,
+/// reaching this at all means the probe is not being heard, and the page
+/// underneath is showing through the cover already.
+const Duration _loadCoverLimit = Duration(seconds: 10);
+
+/// How long the cover takes to fade once the page has painted.
+const Duration _coverFade = Duration(milliseconds: 220);
+
+/// How long after `load` the cover waits for a paint report before lifting
+/// anyway. A page that has painted answers the probe within a frame or two;
+/// this only has to outlast that, and the blank interstitial it exists for
+/// starts its real load well inside it.
+const Duration _finishGrace = Duration(milliseconds: 800);
+
+/// Reports the page's first paint to the app, so the loading cover can lift
+/// as soon as there is something under it to see.
+///
+/// `onPageFinished` is the window's `load` event, and on a retail site that
+/// waits for every tracker, ad and lazy image — routinely ten to twenty
+/// seconds after the page itself was on screen. The browser knows the
+/// moment it first drew content and says so through the paint timing API;
+/// where it does not, a body with a height that has survived two frames has
+/// been drawn.
+///
+/// Installs itself once per document. Injected on every progress tick and
+/// URL change rather than on page start, because on iOS page start fires
+/// while the previous document is still the one scripts run in.
+const String _paintProbeScript = r"""
+(function () {
+  if (window.__livelookPaintProbe) return;
+  if (typeof LiveLookBridge === 'undefined') return;
+  window.__livelookPaintProbe = true;
+
+  var reported = false;
+  function painted() {
+    if (reported) return;
+    reported = true;
+    LiveLookBridge.postMessage(JSON.stringify({
+      type: 'painted',
+      url: location.href
+    }));
+  }
+
+  function hasContentfulPaint(entries) {
+    for (var i = 0; entries && i < entries.length; i++) {
+      if (entries[i].name === 'first-contentful-paint') return true;
+    }
+    return false;
+  }
+
+  // The browser's own word for it. Buffered, so a paint that happened
+  // before this ran still counts.
+  try {
+    new PerformanceObserver(function (list) {
+      if (hasContentfulPaint(list.getEntries())) painted();
+    }).observe({ type: 'paint', buffered: true });
+  } catch (e) {}
+
+  // The fallback, for a browser without paint timing. A body that has
+  // children and a height has been laid out; two frames later it has been
+  // drawn. An empty document — `about:blank` before the first page — never
+  // gets there, which is the point: it has nothing to report.
+  function poll() {
+    if (reported) return;
+    try {
+      if (hasContentfulPaint(performance.getEntriesByType('paint'))) {
+        return painted();
+      }
+    } catch (e) {}
+    var body = document.body;
+    if (body && body.children.length &&
+        body.getBoundingClientRect().height > 0) {
+      requestAnimationFrame(function () { requestAnimationFrame(painted); });
+      return;
+    }
+    setTimeout(poll, 100);
+  }
+  poll();
+})();
+""";
+
+/// When, after a page starts, the paint probe is sent again. Dense early,
+/// where a page usually commits and paints, then sparse: past a few seconds
+/// `onPageFinished` is the likelier way out.
+const List<Duration> _paintProbeRetries = [
+  Duration(milliseconds: 150),
+  Duration(milliseconds: 400),
+  Duration(milliseconds: 800),
+  Duration(milliseconds: 1500),
+  Duration(milliseconds: 2500),
+  Duration(milliseconds: 4000),
+];
+
+void _applyPaintProbe(WebViewController controller) {
+  controller.runJavaScript(_paintProbeScript).catchError((Object _) {});
+}
 
 /// Name of the channel the page posts tapped links to. Must match the script.
 const String _bridgeChannel = 'LiveLookBridge';

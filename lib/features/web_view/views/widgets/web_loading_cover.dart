@@ -13,9 +13,19 @@ import '../../../../core/widgets/mirror_wordmark.dart';
 /// This covers that gap with the app signing its own name, so the wait
 /// belongs to the app instead of looking like its absence.
 ///
-/// Opaque on purpose: the view underneath is still showing the page being
-/// left, and a half-lit version of it says less than a clean wait.
+/// Translucent, and deliberately so. The cover lifts on the page's first
+/// paint, but a page that never reports one sits under it until the limit —
+/// and through a translucent cover that page is already readable, so the
+/// wait costs nothing but a dimming. On the way from one page to the next
+/// the page being left shows through dimmed, which reads as the site
+/// changing rather than the app going dark.
 class WebLoadingCover extends HookWidget {
+  /// The cover's own colours: the stage palette, let through enough to
+  /// see the page under it. Dark enough at the edge to keep the wordmark
+  /// legible over a white retail page.
+  static const Color _centre = Color(0xCC171717);
+  static const Color _edge = Color(0xE6000000);
+
   const WebLoadingCover({super.key});
 
   @override
@@ -41,10 +51,7 @@ class WebLoadingCover extends HookWidget {
       // Lit from the middle rather than flat: the same black everywhere
       // reads as a screen that is off.
       decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          radius: 0.85,
-          colors: [AppColors.stageElevated, AppColors.stageBackground],
-        ),
+        gradient: RadialGradient(radius: 0.85, colors: [_centre, _edge]),
       ),
       child: Center(
         child: Column(

@@ -39,6 +39,14 @@ Dio apiClient(Ref ref) {
         error: true,
         compact: true,
         maxWidth: 90,
+        // A product shot fetched as bytes is a picture, not a payload worth
+        // reading. Printed as a list of numbers it runs to thousands of
+        // lines, and `debugPrint` throttles every log after it for seconds,
+        // which is long enough to make the timing lines lie.
+        filter: (options, args) =>
+            !args.isResponse ||
+            (options.responseType != ResponseType.bytes &&
+                args.data is! List<int>),
       ),
     );
   }

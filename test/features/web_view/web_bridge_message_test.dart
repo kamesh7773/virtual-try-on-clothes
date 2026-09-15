@@ -101,6 +101,38 @@ void main() {
     });
   });
 
+  group('paints', () {
+    test('reads where the page was when it first painted', () {
+      final message = WebBridgeMessage.tryParse(
+        jsonEncode({
+          'type': 'painted',
+          'url': 'https://www.dickssportinggoods.com/f/mens-golf-apparel',
+        }),
+      );
+
+      expect(message, isA<WebPaintedMessage>());
+      expect(
+        (message! as WebPaintedMessage).url.host,
+        'www.dickssportinggoods.com',
+      );
+    });
+
+    test('a paint with no page to its name is dropped', () {
+      // The bridge is reachable by every script on the page; a paint the
+      // app cannot place is not one it can act on.
+      expect(
+        WebBridgeMessage.tryParse(jsonEncode({'type': 'painted'})),
+        isNull,
+      );
+      expect(
+        WebBridgeMessage.tryParse(
+          jsonEncode({'type': 'painted', 'url': 'not a url'}),
+        ),
+        isNull,
+      );
+    });
+  });
+
   test('anything that is not a message is ignored', () {
     // The bridge is reachable by every script on the page, so junk arriving
     // on it has to be survivable.

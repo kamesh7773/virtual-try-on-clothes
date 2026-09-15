@@ -25,6 +25,13 @@ sealed class WebBridgeMessage {
       return WebProductMessage(WebProduct.tryParse(decoded));
     }
 
+    if (decoded['type'] == 'painted') {
+      final url = decoded['url'];
+      final uri = url is String ? Uri.tryParse(url) : null;
+      if (uri == null || uri.host.isEmpty) return null;
+      return WebPaintedMessage(uri);
+    }
+
     final report = WebTapReport.tryParse(decoded);
     return report == null ? null : WebTapMessage(report);
   }
@@ -43,4 +50,19 @@ final class WebProductMessage extends WebBridgeMessage {
   final WebProduct? product;
 
   const WebProductMessage(this.product);
+}
+
+/// The page has drawn its first content.
+///
+/// Sent once per document, the moment the browser reports a first
+/// contentful paint — or, where it will not say, once the body has a height
+/// and a couple of frames have gone by. This is what lifts the loading cover:
+/// a retailer's `load` event can be tens of seconds behind its first paint,
+/// and a page the user could already be reading is not worth hiding.
+final class WebPaintedMessage extends WebBridgeMessage {
+  /// Where the page was when it painted, so a report from a document being
+  /// left can be told apart from the one being waited for.
+  final Uri url;
+
+  const WebPaintedMessage(this.url);
 }
