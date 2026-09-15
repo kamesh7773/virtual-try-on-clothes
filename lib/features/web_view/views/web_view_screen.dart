@@ -184,10 +184,11 @@ class WebViewScreen extends HookConsumerWidget {
       [destination.url],
     );
 
-    // Asks the page to add the product, in the size given, and waits for
-    // the bridge to say how it went — see `_bridgeScript`'s checkout.
-    void runCheckout({required String? size, required String? color}) {
-      _runCheckout(controller, size: size, color: color);
+    // Asks the page to add the product, with the choices given by group
+    // name, and waits for the bridge to say how it went — see
+    // `_bridgeScript`'s checkout.
+    void runCheckout(Map<String, String> choices) {
+      _runCheckout(controller, choices);
       checkoutTimeout.value?.cancel();
       checkoutTimeout.value = Timer(_checkoutLimit, () {
         if (!context.mounted) return;
@@ -204,23 +205,21 @@ class WebViewScreen extends HookConsumerWidget {
 
     void startCheckout() {
       switch (tryOnViewModel.startCheckout()) {
-        case CheckoutPlan.pickColor:
-        case CheckoutPlan.pickSize:
-          // The preview shows the colour or size row; the pick comes back
-          // through `onColorPicked` / `onSizePicked` below.
+        case CheckoutPlan.pick:
+          // The preview asks for the open attribute; the pick comes back
+          // through `onPicked` below.
           return;
         case CheckoutPlan.add:
-          final now = ref.read(productTryOnViewModelProvider);
-          runCheckout(size: now.checkoutSize, color: now.checkoutColor);
+          runCheckout(ref.read(productTryOnViewModelProvider).checkoutChoices);
         case CheckoutPlan.guide:
           // The page's controls could not be read, so the page itself is
-          // the way to finish: close the picture, bring its size row into
+          // the way to finish: close the picture, bring its options into
           // view, and say what to do there.
           tryOnViewModel.dismissResult();
           _guideToPurchase(controller);
           _showMessage(
             context,
-            'Choose a size on the page, then tap Add To Cart.',
+            'Choose your options on the page, then tap Add To Cart.',
           );
       }
     }
@@ -250,12 +249,11 @@ class WebViewScreen extends HookConsumerWidget {
           final navigator = Navigator.of(context);
 
           // The try-on lies over the page, so it is what a back gesture is
-          // asking to leave — not the page underneath it. A size row open
+          // asking to leave — not the page underneath it. A question open
           // over the try-on is one step further out again.
           final tryOnNow = ref.read(productTryOnViewModelProvider);
           if (tryOnNow.hasResult) {
-            if (tryOnNow.checkoutStep == CheckoutStep.pickingSize ||
-                tryOnNow.checkoutStep == CheckoutStep.pickingColor) {
+            if (tryOnNow.checkoutStep == CheckoutStep.picking) {
               tryOnViewModel.cancelCheckout();
             } else {
               tryOnViewModel.dismissResult();
@@ -372,25 +370,19 @@ class WebViewScreen extends HookConsumerWidget {
                         onClose: tryOnViewModel.dismissResult,
                         canCheckout: tryOn.canCheckout,
                         step: tryOn.checkoutStep,
-                        sizes: tryOn.sizes,
-                        colors: tryOn.colors,
+                        choosing: tryOn.choosing,
                         onCheckout: startCheckout,
-                        onColorPicked: (label) {
-                          // Colour settled; the size may still be open.
-                          if (tryOnViewModel.chooseColor(label) ==
+                        onPicked: (label) {
+                          // One attribute settled; the next open one is
+                          // asked for, or the page is.
+                          if (tryOnViewModel.choose(label) ==
                               CheckoutPlan.add) {
-                            final now = ref.read(productTryOnViewModelProvider);
-                            runCheckout(size: now.checkoutSize, color: label);
+                            runCheckout(
+                              ref
+                                  .read(productTryOnViewModelProvider)
+                                  .checkoutChoices,
+                            );
                           }
-                        },
-                        onSizePicked: (label) {
-                          tryOnViewModel.chooseSize(label);
-                          runCheckout(
-                            size: label,
-                            color: ref
-                                .read(productTryOnViewModelProvider)
-                                .checkoutColor,
-                          );
                         },
                         onCancelPick: tryOnViewModel.cancelCheckout,
                       ),
@@ -762,6 +754,13 @@ WebViewController _createController({
           // the case that matters, the jump from the mirror to a retailer.
           if (url.host != currentHost.value) return;
           lift();
+          // A page brought back from the cache paints but never finishes,
+          // and a visit completed only on finish would sit in the history
+          // as loading for good. Completed here as well; a finish that does
+          // come later overwrites this with its own, longer time.
+          controller.getTitle().then((title) {
+            if (isMounted()) onVisitFinished(title);
+          });
 
         case WebTapMessage(:final report):
           final uri = Uri.tryParse(report.url);
@@ -989,9 +988,14 @@ const Duration _finishGrace = Duration(milliseconds: 800);
 /// where it does not, a body with a height that has survived two frames has
 /// been drawn.
 ///
-/// Installs itself once per document. Injected on every progress tick and
-/// URL change rather than on page start, because on iOS page start fires
-/// while the previous document is still the one scripts run in.
+/// Installs itself once per document, and reports once per showing: a
+/// document restored from the back-forward cache reports again on
+/// `pageshow`, since going back is a navigation the app sees start and
+/// finish but no paint of — the page was painted before it left.
+///
+/// Injected on every progress tick and URL change rather than on page
+/// start, because on iOS page start fires while the previous document is
+/// still the one scripts run in.
 const String _paintProbeScript = r"""
 (function () {
   if (window.__livelookPaintProbe) return;
@@ -1007,6 +1011,16 @@ const String _paintProbeScript = r"""
       url: location.href
     }));
   }
+
+  // A page brought back from the back-forward cache is not loaded again,
+  // it is shown again — already painted, with this probe already spent.
+  // Going back is the one navigation where the cover has nothing to wait
+  // for, so it is told so on the spot.
+  window.addEventListener('pageshow', function (event) {
+    if (!event.persisted) return;
+    reported = false;
+    painted();
+  });
 
   function hasContentfulPaint(entries) {
     for (var i = 0; entries && i < entries.length; i++) {
@@ -1063,17 +1077,14 @@ const List<Duration> _paintProbeRetries = [
 /// this is for a script that was never installed to answer at all.
 const Duration _checkoutLimit = Duration(seconds: 40);
 
-void _runCheckout(
-  WebViewController controller, {
-  required String? size,
-  required String? color,
-}) {
-  final sizeArg = size == null ? 'null' : jsonEncode(size);
-  final colorArg = color == null ? 'null' : jsonEncode(color);
+/// [choices] is what to press on the page, by the page's own name for each
+/// attribute row; the script matches names loosely and presses in the
+/// page's order, whatever order these arrive in.
+void _runCheckout(WebViewController controller, Map<String, String> choices) {
   controller
       .runJavaScript(
         'if (window.__livelookCheckout) '
-        'window.__livelookCheckout($sizeArg, $colorArg);',
+        'window.__livelookCheckout(${jsonEncode(choices)});',
       )
       .catchError((Object _) {});
 }
@@ -1496,65 +1507,198 @@ const String _bridgeScript = r"""
     return img ? (img.currentSrc || img.src || '') : '';
   }
 
+  function plain(name) {
+    return String(name).toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+
   function sameName(a, b) {
-    var x = String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
-    var y = String(b).toLowerCase().replace(/[^a-z0-9]/g, '');
+    var x = plain(a);
+    var y = plain(b);
     return x && y && (x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0);
   }
 
-  // The colour swatches: small clickable things with a name — an alt, a
-  // title, an aria-label — gathered under the nearest "Color" heading. Each
-  // comes back as { el, label, image }.
-  function colorControls() {
-    var headings = document.querySelectorAll(
-      'label, legend, span, div, p, h2, h3, h4, dt, strong, b');
-    var anchor = null;
-    for (var i = 0; i < headings.length; i++) {
-      var own = ownText(headings[i]);
-      if (own.length < 40 && /^colou?r\b/i.test(own) && visible(headings[i])) {
-        anchor = headings[i];
-        break;
-      }
+  // The entry in `list` called `label`: the one spelt the same first, and
+  // only failing that one that contains it — "L" must not find "XL".
+  function named(list, label) {
+    for (var i = 0; i < list.length; i++) {
+      if (plain(list[i].label) === plain(label)) return list[i];
     }
-    if (!anchor) return [];
+    for (var j = 0; j < list.length; j++) {
+      if (sameName(list[j].label, label)) return list[j];
+    }
+    return null;
+  }
 
-    // What the heading says is chosen — "Color: Red" — for pages that mark
-    // the swatch no other way.
-    var chosen = words(anchor.parentElement || anchor).replace(/^[\s\S]*?colou?r:?\s*/i, '').split('\n')[0].trim();
-    if (chosen.length > 40 || /please|select/i.test(chosen)) chosen = '';
+  // What a store heads an attribute row with. A heading ending in a colon
+  // is taken whatever it says; these are taken without one.
+  var GROUP_NAME = new RegExp('^(colou?r|size|inseam|width|length|waist|rise|fit|style|' +
+    'hand|loft|flex|shaft|lie|bounce|grind|scent|flavou?r|band|cup|pattern|finish|' +
+    'material|capacity|volume|weight|dimensions?|configuration|model)$', 'i');
+  // Things beside a row that are not one of its values: the size chart
+  // link, the fit finder, the prompt to choose.
+  var NOT_A_VALUE = /chart|guide|what'?s my|find (my|your)|select|please|choose|view|see all|shop|learn|more$/i;
 
-    var ancestor = anchor.parentElement;
+  // What `el` heads, as { name, chosen, known }: "Color" from a "Color:"
+  // span, with "Tuxedo" as chosen when the span says "Color: Tuxedo" —
+  // or null when it heads nothing. `known` is whether the name is one a
+  // store is known to sell by, as against a bare heading with a colon.
+  function headingOf(el) {
+    var own = ownText(el);
+    if (!own || own.length > 70 || !visible(el)) return null;
+    var name, chosen = '';
+    var split = own.match(/^([A-Za-z][A-Za-z\/&' -]{0,28}?)\s*:\s*(.*)$/);
+    if (split) {
+      name = split[1];
+      chosen = split[2].trim();
+    } else if (/^[A-Za-z][A-Za-z\/&' -]{0,28}$/.test(own)) {
+      name = own;
+    } else {
+      return null;
+    }
+    name = name.replace(/^(select|choose|pick)\s+(an?|your)?\s*/i, '').trim();
+    if (!name || SIZE_TOKEN.test(name)) return null;
+    var known = GROUP_NAME.test(name);
+    if (!split && !known) return null;
+    // A heading is not itself something to press.
+    if (el.closest('button, a, [role="button"], [role="radio"], [role="option"]')) return null;
+    if (el.tagName === 'LABEL' && el.control) return null;
+    return { name: name, chosen: chosen, known: known };
+  }
+
+  function follows(a, b) {
+    return !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  }
+
+  // The values offered under `heading`: small clickable things after it
+  // and before the next heading, each with a name — its text, an alt, a
+  // title, an aria-label. Looked for under the heading's nearest ancestors
+  // in turn, the first to hold a row of two or more winning.
+  function valuesUnder(heading, head, headings) {
+    var name = head.name;
+    // What the heading row says is chosen — "Color: Tuxedo", "Size: L" —
+    // for pages that mark the value itself no other way. In the heading's
+    // own text, or failing that in the row it sits in.
+    var chosen = head.chosen;
+    if (!chosen) {
+      var row = words(heading.parentElement || heading);
+      var own = ownText(heading);
+      var at = row.toLowerCase().indexOf(own.toLowerCase());
+      chosen = at < 0 ? '' : row.slice(at + own.length).trim();
+    }
+    if (chosen.length > 40 || NOT_A_VALUE.test(chosen)) chosen = '';
+    // A row under a heading nobody knows — "Ships to:" — has to look like
+    // options to count: short labels, not sentences.
+    var longest = head.known ? 60 : 24;
+
+    var ancestor = heading.parentElement;
     for (var depth = 0; ancestor && depth < 5; depth++) {
       var found = [];
       var nodes = ancestor.querySelectorAll(
-        'button, [role="radio"], [role="option"], [role="button"], a, li, img');
+        'button, [role="radio"], [role="option"], [role="button"], label, a, li, img');
       for (var j = 0; j < nodes.length; j++) {
         var node = nodes[j];
-        if (!visible(node)) continue;
+        if (!visible(node) || !follows(heading, node) || node.contains(heading)) continue;
+        var cut = false;
+        for (var h = 0; h < headings.length; h++) {
+          var other = headings[h];
+          if (other !== heading && ancestor.contains(other) && follows(heading, other) &&
+              follows(other, node) && !other.contains(node)) { cut = true; break; }
+        }
+        if (cut) continue;
         var rect = node.getBoundingClientRect();
-        if (rect.width < 16 || rect.width > 220 || rect.height > 220) continue;
+        if (rect.width < 16 || rect.width > 220 || rect.height < 12 || rect.height > 220) continue;
         var clickable = node.tagName === 'IMG'
-          ? (node.closest('button, a, [role="radio"], [role="option"], [role="button"], li') || node.parentElement)
+          ? (node.closest('button, a, [role="radio"], [role="option"], [role="button"], label, li') || node.parentElement)
           : node;
-        var name = nameOf(clickable) || nameOf(node);
-        if (!name || name.length > 60 || SIZE_TOKEN.test(name)) continue;
+        var label = nameOf(clickable) || nameOf(node);
+        if (!label || label.length > longest || NOT_A_VALUE.test(label) || plain(label) === plain(name)) continue;
         var duplicate = false;
         for (var k = 0; k < found.length; k++) {
-          if (found[k].el === clickable || sameName(found[k].label, name)) { duplicate = true; break; }
+          if (found[k].el === clickable || found[k].el.contains(clickable) || clickable.contains(found[k].el) ||
+              plain(found[k].label) === plain(label)) { duplicate = true; break; }
         }
         if (duplicate) continue;
         found.push({
           el: clickable,
-          label: name,
+          label: label,
           image: imageOf(node),
+          available: !isDisabled(clickable),
           selected: isSelected(clickable) || (clickable.parentElement && isSelected(clickable.parentElement)) ||
-            (chosen ? sameName(chosen, name) : false)
+            (chosen ? plain(chosen) === plain(label) : false)
         });
       }
       if (found.length >= 2) return found;
       ancestor = ancestor.parentElement;
     }
     return [];
+  }
+
+  // How far `el` is from the Add To Cart button: the number of steps up
+  // from the button to an ancestor holding both. A "Color:" row in a
+  // carousel of other products is further than the product's own.
+  function distanceFromCart(el) {
+    var add = addToCartControl();
+    var node = add;
+    for (var depth = 0; node; depth++) {
+      if (node.contains(el)) return depth;
+      node = node.parentElement;
+    }
+    return 999;
+  }
+
+  // Every attribute the page wants chosen, in the page's order: each a
+  // heading — "Color", "Size", "Inseam", whatever the store sells by — and
+  // the values under it, as [{ name, values: [{ el, label, image,
+  // available, selected }] }]. Read afresh each time: choosing a colour
+  // can redraw the sizes under it.
+  function optionGroups() {
+    var candidates = document.querySelectorAll(
+      'label, legend, span, div, p, h2, h3, h4, h5, dt, strong, b');
+    var headings = [];
+    var heads = [];
+    for (var i = 0; i < candidates.length; i++) {
+      var head = headingOf(candidates[i]);
+      if (!head) continue;
+      headings.push(candidates[i]);
+      heads.push(head);
+    }
+    var groups = [];
+    for (var j = 0; j < headings.length; j++) {
+      var values = valuesUnder(headings[j], heads[j], headings);
+      if (!values.length) continue;
+      var group = { name: heads[j].name, values: values, distance: distanceFromCart(headings[j]) };
+      // Two rows under one name are two products; keep the one the
+      // Add To Cart button is for.
+      var taken = -1;
+      for (var k = 0; k < groups.length; k++) {
+        if (plain(groups[k].name) === plain(group.name)) { taken = k; break; }
+      }
+      if (taken < 0) groups.push(group);
+      else if (group.distance < groups[taken].distance) groups[taken] = group;
+    }
+    // A size row with no heading over it is still a size row.
+    var hasSize = groups.some(function (g) { return /^size/i.test(g.name); });
+    if (!hasSize) {
+      var sizes = sizeControls();
+      if (sizes.length) {
+        groups.push({
+          name: 'Size',
+          distance: 0,
+          values: sizes.map(function (el) {
+            return { el: el, label: words(el), image: '', available: !isDisabled(el), selected: isSelected(el) };
+          })
+        });
+      }
+    }
+    return groups;
+  }
+
+  function groupNamed(name) {
+    var groups = optionGroups();
+    for (var i = 0; i < groups.length; i++) {
+      if (sameName(groups[i].name, name)) return groups[i];
+    }
+    return null;
   }
 
   function addToCartControl() {
@@ -1584,30 +1728,17 @@ const String _bridgeScript = r"""
   }
 
   function readOptions() {
-    var controls = sizeControls();
-    var sizes = [];
-    for (var i = 0; i < controls.length; i++) {
-      sizes.push({
-        label: words(controls[i]),
-        available: !isDisabled(controls[i]),
-        selected: isSelected(controls[i])
-      });
-    }
-    var swatches = colorControls();
-    var colors = [];
-    for (var j = 0; j < swatches.length; j++) {
-      colors.push({
-        label: swatches[j].label,
-        image: swatches[j].image,
-        available: !isDisabled(swatches[j].el),
-        selected: !!swatches[j].selected
-      });
-    }
     return {
       type: 'options',
       url: location.href,
-      sizes: sizes,
-      colors: colors,
+      groups: optionGroups().map(function (group) {
+        return {
+          name: group.name,
+          values: group.values.map(function (v) {
+            return { label: v.label, image: v.image, available: v.available, selected: !!v.selected };
+          })
+        };
+      }),
       addToCart: !!addToCartControl(),
       cartUrl: cartLink()
     };
@@ -1622,13 +1753,15 @@ const String _bridgeScript = r"""
     var key = JSON.stringify(payload);
     if (key === lastOptionsKey) return;
     lastOptionsKey = key;
-    var chosenColor = null;
-    for (var c = 0; c < payload.colors.length; c++) {
-      if (payload.colors[c].selected) chosenColor = payload.colors[c].label;
-    }
-    console.log('livelook: options ' + payload.sizes.length + ' sizes, ' +
-      payload.colors.length + ' colors' + (chosenColor ? ' (' + chosenColor + ' chosen)' : '') +
-      ', add to cart ' + (payload.addToCart ? 'found' : 'missing'));
+    var summary = payload.groups.map(function (group) {
+      var chosen = null;
+      for (var v = 0; v < group.values.length; v++) {
+        if (group.values[v].selected) chosen = group.values[v].label;
+      }
+      return group.name + ' ' + group.values.length + (chosen ? ' (' + chosen + ')' : '');
+    });
+    console.log('livelook: options ' + (summary.length ? summary.join(', ') : 'none') +
+      '; add to cart ' + (payload.addToCart ? 'found' : 'missing'));
     LiveLookBridge.postMessage(key);
   }
 
@@ -1802,7 +1935,8 @@ const String _bridgeScript = r"""
   // whatever the page calls the box they sit in.
   function purchasePanel() {
     var add = addToCartControl();
-    var mark = sizeControls()[0] || (colorControls()[0] || {}).el;
+    var groups = optionGroups();
+    var mark = groups.length ? groups[0].values[0].el : null;
     var node = add;
     for (var depth = 0; node && depth < 10; depth++) {
       if (!mark || node.contains(mark)) return node;
@@ -1826,13 +1960,16 @@ const String _bridgeScript = r"""
     return null;
   }
 
-  // Adds the product to the cart the way the user would: the size button,
-  // then Add to Cart, then a watch for the answer — the site's own logged
-  // verdict, its cart API, an error appearing, or the cart badge changing.
+  // Adds the product to the cart the way the user would: each attribute's
+  // button in turn, then Add to Cart, then a watch for the answer — the
+  // site's own logged verdict, its cart API, an error appearing, or the
+  // cart badge changing. `choices` is { "Color": "Tuxedo", "Size": "L",
+  // "Inseam": "32" }, by the page's own names for its rows; rows it does
+  // not name are pressed in the page's order regardless of the order here.
   // Answers over the bridge once, with `added`, or `failed` and a reason.
   // Never `timeout` into the cart: a cart page with nothing in it is the
   // one outcome worse than a refusal.
-  window.__livelookCheckout = function (sizeLabel, colorLabel) {
+  window.__livelookCheckout = function (choices) {
     var answered = false;
     function answer(status, reason) {
       if (answered) return;
@@ -1857,24 +1994,20 @@ const String _bridgeScript = r"""
     // Each is looked up afresh at every step: choosing a colour can
     // redraw the size row, and a node held from before is then nobody's.
     var steps = [];
-    if (colorLabel) {
-      steps.push({ kind: 'Color', label: colorLabel, wait: 1500, find: function () {
-        return colorControls().map(function (c) { return { el: c.el, label: c.label, selected: c.selected }; });
-      } });
-    }
-    if (sizeLabel) {
-      steps.push({ kind: 'Size', label: sizeLabel, wait: 2500, find: function () {
-        return sizeControls().map(function (el) { return { el: el, label: words(el), selected: isSelected(el) }; });
-      } });
+    var groups = optionGroups();
+    var wanted = choices && typeof choices === 'object' ? choices : {};
+    for (var g = 0; g < groups.length; g++) {
+      var label = null;
+      for (var key in wanted) {
+        if (sameName(key, groups[g].name) && wanted[key]) { label = String(wanted[key]); break; }
+      }
+      if (label) steps.push({ kind: groups[g].name, label: label, wait: 2500 });
     }
 
     function choose(step, done) {
       function current() {
-        var all = step.find();
-        for (var i = 0; i < all.length; i++) {
-          if (sameName(all[i].label, step.label)) return all[i];
-        }
-        return null;
+        var group = groupNamed(step.kind);
+        return group ? named(group.values, step.label) : null;
       }
       var target = current();
       if (!target) return answer('failed', step.kind + ' ' + step.label + ' is no longer offered on the page.');
@@ -1982,7 +2115,8 @@ const String _bridgeScript = r"""
   // For a page whose controls could not be read: bring the buying part of
   // it into view so the user can finish there.
   window.__livelookGuide = function () {
-    var target = sizeControls()[0] || addToCartControl();
+    var groups = optionGroups();
+    var target = groups.length ? groups[0].values[0].el : addToCartControl();
     if (target && target.scrollIntoView) {
       target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }

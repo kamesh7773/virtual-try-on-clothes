@@ -172,12 +172,16 @@ void main() {
   });
 
   group('checkout from the preview', () {
+    const sizeRow = WebOptionGroup(
+      name: 'Size',
+      values: [
+        WebOptionValue(label: 'S'),
+        WebOptionValue(label: 'M'),
+      ],
+    );
     const withSizes = WebPurchaseOptions(
       pageUrl: 'https://www.dickssportinggoods.com/p/walter-hagen-polo',
-      sizes: [
-        WebSizeOption(label: 'S'),
-        WebSizeOption(label: 'M'),
-      ],
+      groups: [sizeRow],
       canAddToCart: true,
     );
 
@@ -214,16 +218,16 @@ void main() {
       viewModel.setProduct(_product);
       viewModel.setOptions(withSizes);
 
-      expect(viewModel.startCheckout(), CheckoutPlan.pickSize);
-      expect(
-        container.read(productTryOnViewModelProvider).checkoutStep,
-        CheckoutStep.pickingSize,
-      );
+      expect(viewModel.startCheckout(), CheckoutPlan.pick);
+      var state = container.read(productTryOnViewModelProvider);
+      expect(state.checkoutStep, CheckoutStep.picking);
+      expect(state.choosing, sizeRow);
 
-      viewModel.chooseSize('M');
-      final state = container.read(productTryOnViewModelProvider);
+      expect(viewModel.choose('M'), CheckoutPlan.add);
+      state = container.read(productTryOnViewModelProvider);
       expect(state.checkoutStep, CheckoutStep.adding);
-      expect(state.checkoutSize, 'M');
+      expect(state.choosing, isNull);
+      expect(state.checkoutChoices, {'Size': 'M'});
     });
 
     test('a size the page already has picked goes straight to the cart', () {
@@ -233,9 +237,14 @@ void main() {
       viewModel.setOptions(
         const WebPurchaseOptions(
           pageUrl: 'https://www.dickssportinggoods.com/p/walter-hagen-polo',
-          sizes: [
-            WebSizeOption(label: 'S'),
-            WebSizeOption(label: 'L', selected: true),
+          groups: [
+            WebOptionGroup(
+              name: 'Size',
+              values: [
+                WebOptionValue(label: 'S'),
+                WebOptionValue(label: 'L', selected: true),
+              ],
+            ),
           ],
           canAddToCart: true,
         ),
@@ -244,44 +253,72 @@ void main() {
       expect(viewModel.startCheckout(), CheckoutPlan.add);
       final state = container.read(productTryOnViewModelProvider);
       expect(state.checkoutStep, CheckoutStep.adding);
-      expect(state.checkoutSize, 'L');
+      expect(state.checkoutChoices, {'Size': 'L'});
     });
 
-    test('colours the page has not settled are asked for before the size', () {
+    test('every open attribute is asked for, in the page\'s order', () {
+      // A pair of trousers: colour, size, and an inseam the page will not
+      // sell without — an attribute nothing here knows by name.
       final (container, _) = _container(StubHttpAdapter(body: null));
       final viewModel = container.read(productTryOnViewModelProvider.notifier);
       viewModel.setProduct(_product);
       viewModel.setOptions(
         const WebPurchaseOptions(
           pageUrl: 'https://www.dickssportinggoods.com/p/walter-hagen-polo',
-          colors: [
-            WebColorOption(label: 'Red'),
-            WebColorOption(label: 'Blue'),
-          ],
-          sizes: [
-            WebSizeOption(label: 'S'),
-            WebSizeOption(label: 'M'),
+          groups: [
+            WebOptionGroup(
+              name: 'Color',
+              values: [
+                WebOptionValue(label: 'Tuxedo'),
+                WebOptionValue(label: 'Blue'),
+              ],
+            ),
+            WebOptionGroup(
+              name: 'Size',
+              values: [
+                WebOptionValue(label: 'S'),
+                WebOptionValue(label: 'M'),
+              ],
+            ),
+            WebOptionGroup(
+              name: 'Inseam',
+              values: [
+                WebOptionValue(label: '30'),
+                WebOptionValue(label: '32'),
+                WebOptionValue(label: '34', available: false),
+              ],
+            ),
           ],
           canAddToCart: true,
         ),
       );
 
-      expect(viewModel.startCheckout(), CheckoutPlan.pickColor);
+      expect(viewModel.startCheckout(), CheckoutPlan.pick);
       expect(
-        container.read(productTryOnViewModelProvider).checkoutStep,
-        CheckoutStep.pickingColor,
+        container.read(productTryOnViewModelProvider).choosing?.name,
+        'Color',
       );
 
-      expect(viewModel.chooseColor('Blue'), CheckoutPlan.pickSize);
-      var state = container.read(productTryOnViewModelProvider);
-      expect(state.checkoutStep, CheckoutStep.pickingSize);
-      expect(state.checkoutColor, 'Blue');
+      expect(viewModel.choose('Blue'), CheckoutPlan.pick);
+      expect(
+        container.read(productTryOnViewModelProvider).choosing?.name,
+        'Size',
+      );
 
-      viewModel.chooseSize('M');
-      state = container.read(productTryOnViewModelProvider);
+      expect(viewModel.choose('M'), CheckoutPlan.pick);
+      expect(
+        container.read(productTryOnViewModelProvider).choosing?.name,
+        'Inseam',
+      );
+
+      expect(viewModel.choose('32'), CheckoutPlan.add);
+      final state = container.read(productTryOnViewModelProvider);
       expect(state.checkoutStep, CheckoutStep.adding);
-      expect(state.checkoutColor, 'Blue');
-      expect(state.checkoutSize, 'M');
+      expect(state.checkoutChoices, {
+        'Color': 'Blue',
+        'Size': 'M',
+        'Inseam': '32',
+      });
     });
 
     test('a colour the address names is taken without asking', () {
@@ -299,19 +336,26 @@ void main() {
         const WebPurchaseOptions(
           pageUrl:
               'https://www.dickssportinggoods.com/p/walter-hagen-polo?color=Red',
-          colors: [
-            WebColorOption(label: 'Red'),
-            WebColorOption(label: 'Blue'),
+          groups: [
+            WebOptionGroup(
+              name: 'Color',
+              values: [
+                WebOptionValue(label: 'Red'),
+                WebOptionValue(label: 'Blue'),
+              ],
+            ),
+            WebOptionGroup(
+              name: 'Size',
+              values: [WebOptionValue(label: 'S', selected: true)],
+            ),
           ],
-          sizes: [WebSizeOption(label: 'S', selected: true)],
           canAddToCart: true,
         ),
       );
 
       expect(viewModel.startCheckout(), CheckoutPlan.add);
       final state = container.read(productTryOnViewModelProvider);
-      expect(state.checkoutColor, 'Red');
-      expect(state.checkoutSize, 'S');
+      expect(state.checkoutChoices, {'Color': 'Red', 'Size': 'S'});
     });
 
     test('a refusal ends the checkout and keeps the reason', () {
@@ -320,13 +364,13 @@ void main() {
       viewModel.setProduct(_product);
       viewModel.setOptions(withSizes);
       viewModel.startCheckout();
-      viewModel.chooseSize('S');
+      viewModel.choose('S');
 
       viewModel.checkoutFailed('Size S is out of stock.');
 
       final state = container.read(productTryOnViewModelProvider);
       expect(state.checkoutStep, CheckoutStep.none);
-      expect(state.checkoutSize, isNull);
+      expect(state.checkoutChoices, isEmpty);
       expect(state.error, 'Size S is out of stock.');
     });
 
@@ -339,10 +383,9 @@ void main() {
 
       viewModel.dismissResult();
 
-      expect(
-        container.read(productTryOnViewModelProvider).checkoutStep,
-        CheckoutStep.none,
-      );
+      final state = container.read(productTryOnViewModelProvider);
+      expect(state.checkoutStep, CheckoutStep.none);
+      expect(state.choosing, isNull);
     });
 
     test('leaving the page forgets its options', () {

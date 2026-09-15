@@ -135,15 +135,20 @@ void main() {
   });
 
   group('purchase options', () {
-    test('reads the sizes and controls the page offers', () {
+    test('reads the attribute rows and controls the page offers', () {
       final message = WebBridgeMessage.tryParse(
         jsonEncode({
           'type': 'options',
           'url': 'https://www.dickssportinggoods.com/p/polo',
-          'sizes': [
-            {'label': 'S', 'available': true, 'selected': false},
-            {'label': 'M', 'available': false},
-            {'label': 'L', 'selected': true},
+          'groups': [
+            {
+              'name': 'Size:',
+              'values': [
+                {'label': 'S', 'available': true, 'selected': false},
+                {'label': 'M', 'available': false},
+                {'label': 'L', 'selected': true},
+              ],
+            },
           ],
           'addToCart': true,
           'cartUrl': 'https://www.dickssportinggoods.com/OrderItemDisplay?a=1',
@@ -152,41 +157,75 @@ void main() {
 
       expect(message, isA<WebOptionsMessage>());
       final options = (message! as WebOptionsMessage).options;
-      expect(options.sizes.map((s) => s.label), ['S', 'M', 'L']);
-      expect(options.sizes[1].available, isFalse);
-      expect(options.selectedSize?.label, 'L');
-      expect(options.needsSize, isFalse);
+      expect(options.groups.map((g) => g.name), ['Size']);
+      final size = options.group('size')!;
+      expect(size.values.map((s) => s.label), ['S', 'M', 'L']);
+      expect(size.values[1].available, isFalse);
+      expect(size.selected?.label, 'L');
+      expect(options.nextToChoose(options.settledChoices), isNull);
       expect(options.canAddToCart, isTrue);
       expect(options.cartUrl, contains('OrderItemDisplay'));
     });
 
-    test('a size row with nothing picked needs a size', () {
+    test('rows with nothing picked are asked for in the page\'s order', () {
       final options = WebPurchaseOptions.tryParse({
         'url': 'https://example.com/p',
-        'sizes': [
-          {'label': 'S'},
-          {'label': 'M'},
+        'groups': [
+          {
+            'name': 'Size',
+            'values': [
+              {'label': 'S'},
+              {'label': 'M'},
+            ],
+          },
+          {
+            'name': 'Inseam',
+            'values': [
+              {'label': '30'},
+              {'label': '32'},
+            ],
+          },
         ],
         'addToCart': true,
       })!;
 
-      expect(options.needsSize, isTrue);
-      expect(options.selectedSize, isNull);
+      expect(options.settledChoices, isEmpty);
+      expect(options.nextToChoose(const {})?.name, 'Size');
+      expect(options.nextToChoose(const {'Size': 'M'})?.name, 'Inseam');
+      expect(options.nextToChoose(const {'size': 'M', 'INSEAM': '30'}), isNull);
     });
 
-    test('junk sizes and a non-web cart link are dropped', () {
+    test('junk values, empty rows and a non-web cart link are dropped', () {
       final options = WebPurchaseOptions.tryParse({
         'url': 'https://example.com/p',
-        'sizes': [
-          {'label': 'S'},
-          {'label': 42},
-          'M',
-          {'label': 'a label far too long to be a size'},
+        'groups': [
+          {
+            'name': 'Size',
+            'values': [
+              {'label': 'S'},
+              {'label': 42},
+              'M',
+              {'label': 'x' * 81},
+            ],
+          },
+          {'name': 'Width', 'values': []},
+          {
+            'name': 'Size',
+            'values': [
+              {'label': 'XL'},
+            ],
+          },
+          {
+            'values': [
+              {'label': '10'},
+            ],
+          },
         ],
         'cartUrl': 'javascript:alert(1)',
       })!;
 
-      expect(options.sizes.map((s) => s.label), ['S']);
+      expect(options.groups.map((g) => g.name), ['Size']);
+      expect(options.groups.single.values.map((s) => s.label), ['S']);
       expect(options.cartUrl, isNull);
       expect(options.canAddToCart, isFalse);
     });
@@ -195,66 +234,115 @@ void main() {
       final options = WebPurchaseOptions.tryParse({
         'url':
             'https://www.dickssportinggoods.com/p/polo?color=Football%20Dog%20Convo%20Red',
-        'colors': [
+        'groups': [
           {
-            'label': 'Carolina Convo Blue',
-            'image': 'https://dks.scene7.com/is/image/blue',
+            'name': 'Color',
+            'values': [
+              {
+                'label': 'Carolina Convo Blue',
+                'image': 'https://dks.scene7.com/is/image/blue',
+              },
+              {'label': 'Football Dog Convo Red', 'image': '/relative.png'},
+            ],
           },
-          {'label': 'Football Dog Convo Red', 'image': '/relative.png'},
         ],
         'addToCart': true,
       })!;
 
-      expect(options.colors.map((c) => c.label), [
-        'Carolina Convo Blue',
-        'Football Dog Convo Red',
-      ]);
-      expect(options.colors.first.imageUrl, contains('scene7'));
-      expect(options.colors.last.imageUrl, isNull);
+      final color = options.groups.single;
+      expect(color.isColor, isTrue);
+      expect(color.isSwatch, isTrue);
+      expect(color.values.first.imageUrl, contains('scene7'));
+      expect(color.values.last.imageUrl, isNull);
       expect(options.colorInUrl, 'Football Dog Convo Red');
-      expect(options.resolvedColor?.label, 'Football Dog Convo Red');
-      expect(options.needsColor, isFalse);
+      expect(options.resolved(color)?.label, 'Football Dog Convo Red');
+      expect(options.settledChoices, {'Color': 'Football Dog Convo Red'});
     });
 
     test('a colour the page has marked wins over the URL', () {
       final options = WebPurchaseOptions.tryParse({
         'url': 'https://example.com/p?color=Red',
-        'colors': [
-          {'label': 'Red'},
-          {'label': 'Blue', 'selected': true},
+        'groups': [
+          {
+            'name': 'Colour',
+            'values': [
+              {'label': 'Red'},
+              {'label': 'Blue', 'selected': true},
+            ],
+          },
         ],
       })!;
 
-      expect(options.resolvedColor?.label, 'Blue');
+      expect(options.resolved(options.groups.single)?.label, 'Blue');
     });
 
     test('colours with nothing to settle them have to be asked for', () {
       final options = WebPurchaseOptions.tryParse({
         'url': 'https://example.com/p',
-        'colors': [
-          {'label': 'Red'},
-          {'label': 'Blue'},
+        'groups': [
+          {
+            'name': 'Color',
+            'values': [
+              {'label': 'Red'},
+              {'label': 'Blue'},
+            ],
+          },
         ],
       })!;
 
-      expect(options.needsColor, isTrue);
+      expect(options.nextToChoose(options.settledChoices)?.name, 'Color');
 
       final sold = WebPurchaseOptions.tryParse({
         'url': 'https://example.com/p?color=red',
-        'colors': [
-          {'label': 'Red', 'available': false},
-          {'label': 'Blue'},
+        'groups': [
+          {
+            'name': 'Color',
+            'values': [
+              {'label': 'Red', 'available': false},
+              {'label': 'Blue'},
+            ],
+          },
         ],
       })!;
       // The address names a colour that cannot be bought.
-      expect(sold.needsColor, isTrue);
+      expect(sold.settledChoices, isEmpty);
     });
 
-    test('colour names match loosely', () {
-      const red = WebColorOption(label: 'Football Dog Convo Red');
+    test(
+      'the URL settles only the colour, not a size that happens to match',
+      () {
+        final options = WebPurchaseOptions.tryParse({
+          'url': 'https://example.com/p?color=M',
+          'groups': [
+            {
+              'name': 'Size',
+              'values': [
+                {'label': 'S'},
+                {'label': 'M'},
+              ],
+            },
+          ],
+        })!;
+
+        expect(options.settledChoices, isEmpty);
+      },
+    );
+
+    test('value names match loosely, but the exact spelling comes first', () {
+      const red = WebOptionValue(label: 'Football Dog Convo Red');
       expect(red.isCalled('football-dog-convo-red'), isTrue);
       expect(red.isCalled('FOOTBALL DOG CONVO RED'), isTrue);
       expect(red.isCalled('Blue'), isFalse);
+
+      const sizes = WebOptionGroup(
+        name: 'Size',
+        values: [
+          WebOptionValue(label: 'XL'),
+          WebOptionValue(label: 'L'),
+        ],
+      );
+      expect(sizes.find('L')?.label, 'L');
+      expect(sizes.find('xl')?.label, 'XL');
     });
 
     test('options without a page are no options', () {

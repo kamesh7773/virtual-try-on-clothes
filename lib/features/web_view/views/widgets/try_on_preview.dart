@@ -23,18 +23,17 @@ class TryOnPreview extends StatelessWidget {
 
   final CheckoutStep step;
 
-  /// The sizes the page offers, for the row shown when a size is needed.
-  final List<WebSizeOption> sizes;
-
-  /// The colours the page offers, for the row shown when the page and its
-  /// address between them have not settled on one.
-  final List<WebColorOption> colors;
+  /// The attribute being asked about while [step] is
+  /// [CheckoutStep.picking] — a colour, a size, an inseam, whatever the
+  /// page wants settled — with the values it offers.
+  final WebOptionGroup? choosing;
 
   final VoidCallback? onCheckout;
-  final ValueChanged<String>? onColorPicked;
-  final ValueChanged<String>? onSizePicked;
 
-  /// Back from a colour or size row to the picture, nothing sent.
+  /// The user picked a value for [choosing].
+  final ValueChanged<String>? onPicked;
+
+  /// Back from a question to the picture, nothing sent.
   final VoidCallback? onCancelPick;
 
   const TryOnPreview({
@@ -43,16 +42,15 @@ class TryOnPreview extends StatelessWidget {
     required this.onClose,
     this.canCheckout = false,
     this.step = CheckoutStep.none,
-    this.sizes = const [],
-    this.colors = const [],
+    this.choosing,
     this.onCheckout,
-    this.onColorPicked,
-    this.onSizePicked,
+    this.onPicked,
     this.onCancelPick,
   });
 
   @override
   Widget build(BuildContext context) {
+    final group = choosing;
     return ColoredBox(
       // Not quite black: enough of the page shows through to say this is
       // something laid over it rather than a screen the user was sent to.
@@ -97,28 +95,24 @@ class TryOnPreview extends StatelessWidget {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: switch (step) {
-                  CheckoutStep.pickingColor => _OptionSheet(
-                    title: 'SELECT COLOR',
-                    onCancel: onCancelPick ?? () {},
-                    child: _ColorRow(
-                      colors: colors,
-                      onPick: onColorPicked ?? (_) {},
-                    ),
-                  ),
-                  CheckoutStep.pickingSize => _OptionSheet(
-                    title: 'SELECT SIZE',
-                    onCancel: onCancelPick ?? () {},
-                    child: _SizeRow(
-                      sizes: sizes,
-                      onPick: onSizePicked ?? (_) {},
-                    ),
-                  ),
-                  CheckoutStep.none || CheckoutStep.adding => _CheckoutBar(
-                    adding: step == CheckoutStep.adding,
-                    onTap: onCheckout!,
-                  ),
-                },
+                child: step == CheckoutStep.picking && group != null
+                    ? _OptionSheet(
+                        title: 'SELECT ${group.name.toUpperCase()}',
+                        onCancel: onCancelPick ?? () {},
+                        child: group.isSwatch
+                            ? _SwatchRow(
+                                values: group.values,
+                                onPick: onPicked ?? (_) {},
+                              )
+                            : _ChipRow(
+                                values: group.values,
+                                onPick: onPicked ?? (_) {},
+                              ),
+                      )
+                    : _CheckoutBar(
+                        adding: step == CheckoutStep.adding,
+                        onTap: onCheckout!,
+                      ),
               ),
           ],
         ),
@@ -231,8 +225,8 @@ class _CheckoutBar extends StatelessWidget {
   }
 }
 
-/// A question asked under the picture — which colour, which size — with a
-/// way back to the picture that sends nothing.
+/// A question asked under the picture — which colour, which size, which
+/// inseam — with a way back to the picture that sends nothing.
 class _OptionSheet extends StatelessWidget {
   final String title;
   final VoidCallback onCancel;
@@ -293,14 +287,15 @@ class _OptionSheet extends StatelessWidget {
   }
 }
 
-/// The page's sizes, offered here so the user need not leave the picture to
-/// pick one. Sizes the page has crossed out are shown crossed out too, and
-/// take no tap: offering them would only bring back the page's refusal.
-class _SizeRow extends StatelessWidget {
-  final List<WebSizeOption> sizes;
+/// The page's values as words — sizes, inseams, widths — offered here so
+/// the user need not leave the picture to pick one. Values the page has
+/// crossed out are shown crossed out too, and take no tap: offering them
+/// would only bring back the page's refusal.
+class _ChipRow extends StatelessWidget {
+  final List<WebOptionValue> values;
   final ValueChanged<String> onPick;
 
-  const _SizeRow({required this.sizes, required this.onPick});
+  const _ChipRow({required this.values, required this.onPick});
 
   @override
   Widget build(BuildContext context) {
@@ -308,23 +303,24 @@ class _SizeRow extends StatelessWidget {
       spacing: 8.w,
       runSpacing: 8.h,
       children: [
-        for (final size in sizes)
-          _SizeChip(
-            size: size,
-            onTap: size.available ? () => onPick(size.label) : null,
+        for (final value in values)
+          _Chip(
+            value: value,
+            onTap: value.available ? () => onPick(value.label) : null,
           ),
       ],
     );
   }
 }
 
-/// The page's colour swatches, as the page draws them: a picture each,
-/// named underneath, in a row that scrolls when there are many.
-class _ColorRow extends StatelessWidget {
-  final List<WebColorOption> colors;
+/// The page's values as the page draws them when they are colours: a
+/// picture each, named underneath, in a row that scrolls when there are
+/// many.
+class _SwatchRow extends StatelessWidget {
+  final List<WebOptionValue> values;
   final ValueChanged<String> onPick;
 
-  const _ColorRow({required this.colors, required this.onPick});
+  const _SwatchRow({required this.values, required this.onPick});
 
   static const double _tile = 64;
 
@@ -334,11 +330,11 @@ class _ColorRow extends StatelessWidget {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          for (final color in colors) ...[
-            _ColorTile(
-              color: color,
+          for (final value in values) ...[
+            _Swatch(
+              value: value,
               size: _tile.r,
-              onTap: color.available ? () => onPick(color.label) : null,
+              onTap: value.available ? () => onPick(value.label) : null,
             ),
             SizedBox(width: 10.w),
           ],
@@ -348,24 +344,20 @@ class _ColorRow extends StatelessWidget {
   }
 }
 
-class _ColorTile extends StatelessWidget {
-  final WebColorOption color;
+class _Swatch extends StatelessWidget {
+  final WebOptionValue value;
   final double size;
   final VoidCallback? onTap;
 
-  const _ColorTile({
-    required this.color,
-    required this.size,
-    required this.onTap,
-  });
+  const _Swatch({required this.value, required this.size, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final available = onTap != null;
-    final image = color.imageUrl;
+    final image = value.imageUrl;
     return Semantics(
       button: true,
-      label: color.label,
+      label: value.label,
       child: InkWell(
         onTap: onTap,
         child: SizedBox(
@@ -402,7 +394,7 @@ class _ColorTile extends StatelessWidget {
               ),
               SizedBox(height: 6.h),
               Text(
-                color.label,
+                value.label,
                 maxLines: 2,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
@@ -422,11 +414,11 @@ class _ColorTile extends StatelessWidget {
   }
 }
 
-class _SizeChip extends StatelessWidget {
-  final WebSizeOption size;
+class _Chip extends StatelessWidget {
+  final WebOptionValue value;
   final VoidCallback? onTap;
 
-  const _SizeChip({required this.size, required this.onTap});
+  const _Chip({required this.value, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -446,7 +438,7 @@ class _SizeChip extends StatelessWidget {
             ),
           ),
           child: Text(
-            size.label.toUpperCase(),
+            value.label.toUpperCase(),
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 11.sp,

@@ -11,15 +11,12 @@ part 'product_try_on_view_model.g.dart';
 /// preview. Decided here, from what the page has said about itself; carried
 /// out by the browser, which is the only thing that can drive the page.
 enum CheckoutPlan {
-  /// Ask the user for a colour first; the page offers several and neither
-  /// it nor its address has settled on one.
-  pickColor,
+  /// Ask the user for one of the page's attributes first — the one in
+  /// `state.choosing`. The page offers several values and neither it nor
+  /// its address has settled on one.
+  pick,
 
-  /// Ask the user for a size first; the page has a size row and nothing
-  /// picked on it.
-  pickSize,
-
-  /// Press add-to-cart now — no sizes to choose, or one already chosen.
+  /// Press add-to-cart now: every attribute has an answer.
   add,
 
   /// The page's controls could not be read. Close the preview and hand the
@@ -69,54 +66,46 @@ class ProductTryOnViewModel extends _$ProductTryOnViewModel {
 
   /// The user asked to check out from the preview.
   ///
-  /// Colour before size: the page will not sell without both, and the
-  /// colour is usually already settled — by the page, or by the address the
-  /// product shot was taken from — so it rarely has to be asked for.
+  /// Whatever the page has settled already — a size it shows selected, the
+  /// colour its address names — is taken as given; the first attribute
+  /// left open is asked for, in the page's own order, since a colour can
+  /// redraw the sizes under it.
   CheckoutPlan startCheckout() {
     final options = state.options;
     if (options == null || !options.canAddToCart) return CheckoutPlan.guide;
-
-    if (options.needsColor) {
-      state = state.copyWith(checkoutStep: CheckoutStep.pickingColor);
-      return CheckoutPlan.pickColor;
-    }
-    return _withColor(options, options.resolvedColor?.label);
+    return _advance(options, options.settledChoices);
   }
 
-  /// The user picked a colour in the preview. What comes next is the size
-  /// question, or the cart.
-  CheckoutPlan chooseColor(String label) {
+  /// The user chose [label] for the group being asked about. What comes
+  /// next is the next open attribute, or the cart.
+  CheckoutPlan choose(String label) {
     final options = state.options;
-    if (options == null) return CheckoutPlan.guide;
-    return _withColor(options, label);
+    final group = state.pickingGroup;
+    if (options == null || group == null) return CheckoutPlan.guide;
+    return _advance(options, {...state.checkoutChoices, group: label});
   }
 
-  CheckoutPlan _withColor(WebPurchaseOptions options, String? color) {
-    if (options.needsSize) {
+  CheckoutPlan _advance(
+    WebPurchaseOptions options,
+    Map<String, String> choices,
+  ) {
+    final next = options.nextToChoose(choices);
+    if (next != null) {
       state = state.copyWith(
-        checkoutStep: CheckoutStep.pickingSize,
-        checkoutColor: color,
+        checkoutStep: CheckoutStep.picking,
+        pickingGroup: next.name,
+        checkoutChoices: Map.unmodifiable(choices),
       );
-      return CheckoutPlan.pickSize;
+      return CheckoutPlan.pick;
     }
-
     state = state.copyWith(
       checkoutStep: CheckoutStep.adding,
-      checkoutColor: color,
-      checkoutSize: options.selectedSize?.label,
+      checkoutChoices: Map.unmodifiable(choices),
     );
     return CheckoutPlan.add;
   }
 
-  /// The user picked a size in the preview; the page is about to be asked.
-  void chooseSize(String label) {
-    state = state.copyWith(
-      checkoutStep: CheckoutStep.adding,
-      checkoutSize: label,
-    );
-  }
-
-  /// Back from the size row to the picture, nothing sent.
+  /// Back from a question to the picture, nothing sent.
   void cancelCheckout() => state = state.copyWith(clearCheckout: true);
 
   /// The page refused, or never answered.

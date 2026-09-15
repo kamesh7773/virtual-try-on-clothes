@@ -1,68 +1,29 @@
 import 'package:flutter/foundation.dart';
 
-/// One size a product page offers.
+/// One value a product page offers for one of its attributes: a size, a
+/// colour, an inseam length, a shoe width.
 @immutable
-class WebSizeOption {
-  /// As the page writes it: "S", "XL", "32", "10.5".
+class WebOptionValue {
+  /// As the page writes it: "S", "XL", "32", "Football Dog Convo Red".
   final String label;
 
-  /// False for a size the page has crossed out or disabled.
-  final bool available;
-
-  /// True for the size the page already has selected, if it shows one.
-  final bool selected;
-
-  const WebSizeOption({
-    required this.label,
-    this.available = true,
-    this.selected = false,
-  });
-
-  static WebSizeOption? tryParse(Object? json) {
-    if (json is! Map<String, dynamic>) return null;
-    final label = json['label'];
-    if (label is! String) return null;
-    final trimmed = label.trim();
-    if (trimmed.isEmpty || trimmed.length > 12) return null;
-    return WebSizeOption(
-      label: trimmed,
-      available: json['available'] != false,
-      selected: json['selected'] == true,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is WebSizeOption &&
-          other.label == label &&
-          other.available == available &&
-          other.selected == selected;
-
-  @override
-  int get hashCode => Object.hash(label, available, selected);
-}
-
-/// One colour a product page offers, as a swatch.
-@immutable
-class WebColorOption {
-  /// As the page names it: "Football Dog Convo Red".
-  final String label;
-
-  /// The swatch's own picture, when it has one to show.
+  /// The value's own picture, when the page draws it as a swatch.
   final String? imageUrl;
 
+  /// False for a value the page has crossed out or disabled.
   final bool available;
+
+  /// True for the value the page already has selected, if it shows one.
   final bool selected;
 
-  const WebColorOption({
+  const WebOptionValue({
     required this.label,
     this.imageUrl,
     this.available = true,
     this.selected = false,
   });
 
-  static WebColorOption? tryParse(Object? json) {
+  static WebOptionValue? tryParse(Object? json) {
     if (json is! Map<String, dynamic>) return null;
     final label = json['label'];
     if (label is! String) return null;
@@ -76,7 +37,7 @@ class WebColorOption {
         imageUri.host.isNotEmpty &&
         (imageUri.scheme == 'http' || imageUri.scheme == 'https');
 
-    return WebColorOption(
+    return WebOptionValue(
       label: trimmed,
       imageUrl: imageIsWeb ? imageUri.toString() : null,
       available: json['available'] != false,
@@ -84,7 +45,7 @@ class WebColorOption {
     );
   }
 
-  /// Whether this is the colour called [name] — as the page's URL or a
+  /// Whether this is the value called [name] — as the page's URL or a
   /// shopper would write it, give or take spacing, case and punctuation.
   bool isCalled(String name) {
     final mine = normalizeOptionName(label);
@@ -96,7 +57,7 @@ class WebColorOption {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is WebColorOption &&
+      other is WebOptionValue &&
           other.label == label &&
           other.imageUrl == imageUrl &&
           other.available == available &&
@@ -112,8 +73,86 @@ class WebColorOption {
 String normalizeOptionName(String name) =>
     name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
-/// What a product page lets the user do about buying: the colours and sizes
-/// it offers, whether it has an add-to-cart control, and where its cart
+/// One attribute the page wants settled before it will sell: "Color",
+/// "Size", "Inseam", "Width". Whatever the page calls it, with the values it
+/// offers in the page's order.
+///
+/// Pages differ in which of these they have — a polo has colour and size, a
+/// pair of trousers adds an inseam, a shoe a width — which is why they are
+/// read as a list rather than as two fixed fields.
+@immutable
+class WebOptionGroup {
+  /// As the page heads the row: "Color", "Size", "Inseam".
+  final String name;
+
+  final List<WebOptionValue> values;
+
+  const WebOptionGroup({required this.name, required this.values});
+
+  static WebOptionGroup? tryParse(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final name = json['name'];
+    if (name is! String) return null;
+    final trimmed = name.replaceAll(RegExp(r'\s*:\s*$'), '').trim();
+    if (trimmed.isEmpty || trimmed.length > 30) return null;
+
+    final raw = json['values'];
+    final values = raw is List
+        ? raw.map(WebOptionValue.tryParse).nonNulls.toList(growable: false)
+        : const <WebOptionValue>[];
+    if (values.isEmpty) return null;
+
+    return WebOptionGroup(name: trimmed, values: values);
+  }
+
+  /// Whether this is the page's colour row, under whatever spelling.
+  bool get isColor => RegExp(r'^colou?r', caseSensitive: false).hasMatch(name);
+
+  /// Whether the page draws these as pictures rather than words. Decided
+  /// by the values, not the name: a "Pattern" row of swatches is one too.
+  bool get isSwatch =>
+      values.where((v) => v.imageUrl != null).length * 2 >= values.length;
+
+  /// The value the page has selected already, if it shows one.
+  WebOptionValue? get selected {
+    for (final value in values) {
+      if (value.selected) return value;
+    }
+    return null;
+  }
+
+  /// The value called [name], if it is on offer: the one spelt the same
+  /// first, and only failing that one that contains it — "L" must not find
+  /// "XL" just because it comes earlier in the row.
+  WebOptionValue? find(String name) {
+    final wanted = normalizeOptionName(name);
+    for (final value in values) {
+      if (normalizeOptionName(value.label) == wanted) return value;
+    }
+    for (final value in values) {
+      if (value.isCalled(name)) return value;
+    }
+    return null;
+  }
+
+  /// Whether this is the group called [other], give or take case, spacing
+  /// and a trailing colon.
+  bool isNamed(String other) =>
+      normalizeOptionName(name) == normalizeOptionName(other);
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WebOptionGroup &&
+          other.name == name &&
+          listEquals(other.values, values);
+
+  @override
+  int get hashCode => Object.hash(name, Object.hashAll(values));
+}
+
+/// What a product page lets the user do about buying: the attributes it
+/// wants chosen, whether it has an add-to-cart control, and where its cart
 /// lives.
 ///
 /// Read off the page by the bridge script and sent as it changes — a page
@@ -127,13 +166,10 @@ class WebPurchaseOptions {
   /// not taken for the one now showing.
   final String pageUrl;
 
-  /// In the order the page shows them. Empty when the page has no size row,
-  /// which is also what a one-size product looks like.
-  final List<WebSizeOption> sizes;
-
-  /// The colour swatches, in the page's order. Empty for a page with no
-  /// colour to choose, and for one whose swatches could not be read.
-  final List<WebColorOption> colors;
+  /// The attributes the page asks for, in the order the page shows them —
+  /// which is the order it wants them chosen in. Empty for a page with
+  /// nothing to choose, and for one whose controls could not be read.
+  final List<WebOptionGroup> groups;
 
   /// Whether the page has an add-to-cart control the script can press.
   final bool canAddToCart;
@@ -143,8 +179,7 @@ class WebPurchaseOptions {
 
   const WebPurchaseOptions({
     required this.pageUrl,
-    this.sizes = const [],
-    this.colors = const [],
+    this.groups = const [],
     this.canAddToCart = false,
     this.cartUrl,
   });
@@ -153,18 +188,17 @@ class WebPurchaseOptions {
     final pageUrl = json['url'];
     if (pageUrl is! String || pageUrl.isEmpty) return null;
 
-    final rawSizes = json['sizes'];
-    final sizes = rawSizes is List
-        ? rawSizes.map(WebSizeOption.tryParse).nonNulls.toList(growable: false)
-        : const <WebSizeOption>[];
-
-    final rawColors = json['colors'];
-    final colors = rawColors is List
-        ? rawColors
-              .map(WebColorOption.tryParse)
-              .nonNulls
-              .toList(growable: false)
-        : const <WebColorOption>[];
+    final raw = json['groups'];
+    final parsed = raw is List
+        ? raw.map(WebOptionGroup.tryParse).nonNulls
+        : const Iterable<WebOptionGroup>.empty();
+    // Two rows under the same heading are one reading gone wrong; the
+    // first is kept, as the one nearer the top of the page.
+    final groups = <WebOptionGroup>[];
+    for (final group in parsed) {
+      if (groups.any((g) => g.isNamed(group.name))) continue;
+      groups.add(group);
+    }
 
     final cartUrl = json['cartUrl'];
     final cart = cartUrl is String ? Uri.tryParse(cartUrl) : null;
@@ -175,27 +209,15 @@ class WebPurchaseOptions {
 
     return WebPurchaseOptions(
       pageUrl: pageUrl,
-      sizes: sizes,
-      colors: colors,
+      groups: List.unmodifiable(groups),
       canAddToCart: json['addToCart'] == true,
       cartUrl: cartIsWeb ? cart.toString() : null,
     );
   }
 
-  /// The size the page has selected already, if it shows one.
-  WebSizeOption? get selectedSize {
-    for (final size in sizes) {
-      if (size.selected) return size;
-    }
-    return null;
-  }
-
-  /// Whether the user has to pick a size before the page will add to cart.
-  bool get needsSize => sizes.isNotEmpty && selectedSize == null;
-
-  WebColorOption? get selectedColor {
-    for (final color in colors) {
-      if (color.selected) return color;
+  WebOptionGroup? group(String name) {
+    for (final group in groups) {
+      if (group.isNamed(name)) return group;
     }
     return null;
   }
@@ -212,41 +234,46 @@ class WebPurchaseOptions {
     return null;
   }
 
-  /// The colour to buy without asking: the one the page has selected, or
-  /// failing that the one its address names, if it is on offer. Null when
-  /// the page offers colours and neither settles it.
-  WebColorOption? get resolvedColor {
-    final selected = selectedColor;
+  /// The value of [group] that can be bought without asking: the one the
+  /// page has selected, or for the colour row the one the address names,
+  /// if it is on offer. Null when the user has to be asked.
+  WebOptionValue? resolved(WebOptionGroup group) {
+    final selected = group.selected;
     if (selected != null) return selected;
+    if (!group.isColor) return null;
     final wanted = colorInUrl;
     if (wanted == null) return null;
-    for (final color in colors) {
-      if (color.available && color.isCalled(wanted)) return color;
+    final named = group.find(wanted);
+    return named != null && named.available ? named : null;
+  }
+
+  /// The choices that need no asking, by group name, in the page's order.
+  Map<String, String> get settledChoices => {
+    for (final group in groups)
+      if (resolved(group) case final value?) group.name: value.label,
+  };
+
+  /// The first group [choices] leaves open, in the page's order; null when
+  /// every group has an answer.
+  WebOptionGroup? nextToChoose(Map<String, String> choices) {
+    for (final group in groups) {
+      if (!choices.keys.any(group.isNamed)) return group;
     }
     return null;
   }
-
-  /// Whether the user has to be asked for a colour.
-  bool get needsColor => colors.isNotEmpty && resolvedColor == null;
 
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is WebPurchaseOptions &&
           other.pageUrl == pageUrl &&
-          listEquals(other.sizes, sizes) &&
-          listEquals(other.colors, colors) &&
+          listEquals(other.groups, groups) &&
           other.canAddToCart == canAddToCart &&
           other.cartUrl == cartUrl;
 
   @override
-  int get hashCode => Object.hash(
-    pageUrl,
-    Object.hashAll(sizes),
-    Object.hashAll(colors),
-    canAddToCart,
-    cartUrl,
-  );
+  int get hashCode =>
+      Object.hash(pageUrl, Object.hashAll(groups), canAddToCart, cartUrl);
 }
 
 /// How the page answered a request to add the product to its cart.

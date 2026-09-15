@@ -9,11 +9,9 @@ enum CheckoutStep {
   /// Nothing under way.
   none,
 
-  /// Waiting for the user to pick a colour in the preview.
-  pickingColor,
-
-  /// Waiting for the user to pick a size in the preview.
-  pickingSize,
+  /// Waiting for the user to choose a value for one of the page's
+  /// attributes in the preview — which one is [ProductTryOnState.choosing].
+  picking,
 
   /// The page has been asked to add the product; waiting for its answer.
   adding,
@@ -37,18 +35,20 @@ class ProductTryOnState {
 
   final String? error;
 
-  /// What the product page offers by way of buying — sizes, an add-to-cart
-  /// control. Null until the page has said, and for pages that never do.
+  /// What the product page offers by way of buying — the attributes to
+  /// choose, an add-to-cart control. Null until the page has said, and for
+  /// pages that never do.
   final WebPurchaseOptions? options;
 
   final CheckoutStep checkoutStep;
 
-  /// The size the user picked in the preview, once they have.
-  final String? checkoutSize;
+  /// The attribute the preview is asking about while [checkoutStep] is
+  /// [CheckoutStep.picking]: the name of one of the page's groups.
+  final String? pickingGroup;
 
-  /// The colour the checkout will ask the page for: the user's pick, or the
-  /// one the page or its address had already settled on.
-  final String? checkoutColor;
+  /// What the checkout will ask the page for, by group name: the page's
+  /// own selections, the colour its address named, and the user's picks.
+  final Map<String, String> checkoutChoices;
 
   const ProductTryOnState({
     this.product,
@@ -58,8 +58,8 @@ class ProductTryOnState {
     this.error,
     this.options,
     this.checkoutStep = CheckoutStep.none,
-    this.checkoutSize,
-    this.checkoutColor,
+    this.pickingGroup,
+    this.checkoutChoices = const {},
   });
 
   bool get hasProduct => product != null;
@@ -75,11 +75,13 @@ class ProductTryOnState {
   /// still stands, it just hands the user back to the page to finish.
   bool get canCheckout => product != null && resultUrl != null;
 
-  /// The sizes to offer in the preview, in the page's order.
-  List<WebSizeOption> get sizes => options?.sizes ?? const [];
-
-  /// The colours to offer in the preview, in the page's order.
-  List<WebColorOption> get colors => options?.colors ?? const [];
+  /// The group the preview is asking about, with its values; null when it
+  /// is not asking.
+  WebOptionGroup? get choosing {
+    final name = pickingGroup;
+    if (checkoutStep != CheckoutStep.picking || name == null) return null;
+    return options?.group(name);
+  }
 
   ProductTryOnState copyWith({
     WebProduct? product,
@@ -89,8 +91,8 @@ class ProductTryOnState {
     String? error,
     WebPurchaseOptions? options,
     CheckoutStep? checkoutStep,
-    String? checkoutSize,
-    String? checkoutColor,
+    String? pickingGroup,
+    Map<String, String>? checkoutChoices,
     bool clearResult = false,
     bool clearError = false,
     bool clearCheckout = false,
@@ -104,8 +106,10 @@ class ProductTryOnState {
     checkoutStep: clearCheckout
         ? CheckoutStep.none
         : (checkoutStep ?? this.checkoutStep),
-    checkoutSize: clearCheckout ? null : (checkoutSize ?? this.checkoutSize),
-    checkoutColor: clearCheckout ? null : (checkoutColor ?? this.checkoutColor),
+    pickingGroup: clearCheckout ? null : (pickingGroup ?? this.pickingGroup),
+    checkoutChoices: clearCheckout
+        ? const {}
+        : (checkoutChoices ?? this.checkoutChoices),
   );
 
   @override
@@ -119,8 +123,8 @@ class ProductTryOnState {
           other.error == error &&
           other.options == options &&
           other.checkoutStep == checkoutStep &&
-          other.checkoutSize == checkoutSize &&
-          other.checkoutColor == checkoutColor;
+          other.pickingGroup == pickingGroup &&
+          mapEquals(other.checkoutChoices, checkoutChoices);
 
   @override
   int get hashCode => Object.hash(
@@ -131,7 +135,7 @@ class ProductTryOnState {
     error,
     options,
     checkoutStep,
-    checkoutSize,
-    checkoutColor,
+    pickingGroup,
+    Object.hashAll(checkoutChoices.entries.map((e) => '${e.key}=${e.value}')),
   );
 }

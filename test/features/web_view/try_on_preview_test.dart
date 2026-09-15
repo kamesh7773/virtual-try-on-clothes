@@ -120,7 +120,7 @@ void main() {
     });
 
     testWidgets(
-      'the size row offers the page\'s sizes, crossed out ones aside',
+      'a row of words offers the page\'s values, crossed out ones aside',
       (tester) async {
         String? picked;
         await tester.pumpWidget(
@@ -129,14 +129,17 @@ void main() {
               imageUrl: 'https://example.com/a.png',
               onClose: () {},
               canCheckout: true,
-              step: CheckoutStep.pickingSize,
-              sizes: const [
-                WebSizeOption(label: 'S'),
-                WebSizeOption(label: 'M', available: false),
-                WebSizeOption(label: 'L'),
-              ],
+              step: CheckoutStep.picking,
+              choosing: const WebOptionGroup(
+                name: 'Size',
+                values: [
+                  WebOptionValue(label: 'S'),
+                  WebOptionValue(label: 'M', available: false),
+                  WebOptionValue(label: 'L'),
+                ],
+              ),
               onCheckout: () {},
-              onSizePicked: (label) => picked = label,
+              onPicked: (label) => picked = label,
             ),
           ),
         );
@@ -153,7 +156,35 @@ void main() {
       },
     );
 
-    testWidgets('the colour row offers the page\'s swatches by name', (
+    testWidgets('the question is headed by whatever the page calls the row', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        host(
+          TryOnPreview(
+            imageUrl: 'https://example.com/a.png',
+            onClose: () {},
+            canCheckout: true,
+            step: CheckoutStep.picking,
+            choosing: const WebOptionGroup(
+              name: 'Inseam',
+              values: [
+                WebOptionValue(label: '30'),
+                WebOptionValue(label: '32'),
+              ],
+            ),
+            onCheckout: () {},
+            onPicked: (_) {},
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('SELECT INSEAM'), findsOneWidget);
+      expect(find.text('30'), findsOneWidget);
+    });
+
+    testWidgets('a row of swatches offers the page\'s pictures by name', (
       tester,
     ) async {
       String? picked;
@@ -163,13 +194,23 @@ void main() {
             imageUrl: 'https://example.com/a.png',
             onClose: () {},
             canCheckout: true,
-            step: CheckoutStep.pickingColor,
-            colors: const [
-              WebColorOption(label: 'Football Dog Convo Red'),
-              WebColorOption(label: 'Carolina Convo Blue', available: false),
-            ],
+            step: CheckoutStep.picking,
+            choosing: const WebOptionGroup(
+              name: 'Color',
+              values: [
+                WebOptionValue(
+                  label: 'Football Dog Convo Red',
+                  imageUrl: 'https://dks.scene7.com/is/image/red',
+                ),
+                WebOptionValue(
+                  label: 'Carolina Convo Blue',
+                  imageUrl: 'https://dks.scene7.com/is/image/blue',
+                  available: false,
+                ),
+              ],
+            ),
             onCheckout: () {},
-            onColorPicked: (label) => picked = label,
+            onPicked: (label) => picked = label,
           ),
         ),
       );
@@ -185,9 +226,7 @@ void main() {
       expect(picked, 'Football Dog Convo Red');
     });
 
-    testWidgets('the size row can be closed back to the picture', (
-      tester,
-    ) async {
+    testWidgets('a question can be closed back to the picture', (tester) async {
       var cancelled = 0;
       await tester.pumpWidget(
         host(
@@ -195,8 +234,11 @@ void main() {
             imageUrl: 'https://example.com/a.png',
             onClose: () {},
             canCheckout: true,
-            step: CheckoutStep.pickingSize,
-            sizes: const [WebSizeOption(label: 'S')],
+            step: CheckoutStep.picking,
+            choosing: const WebOptionGroup(
+              name: 'Size',
+              values: [WebOptionValue(label: 'S')],
+            ),
             onCheckout: () {},
             onCancelPick: () => cancelled++,
           ),
