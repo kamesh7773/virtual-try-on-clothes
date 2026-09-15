@@ -24,4 +24,17 @@ void main() {
       expect(WebDestinations.handlesOwnInsets(''), isFalse);
     });
   });
+
+  group('cart', () {
+    test('a known retailer has a cart the app can open', () {
+      expect(
+        WebDestinations.cartUrlFor('www.dickssportinggoods.com'),
+        contains('OrderItemDisplay'),
+      );
+    });
+
+    test('an unknown site has none', () {
+      expect(WebDestinations.cartUrlFor('shop.example.com'), isNull);
+    });
+  });
 }

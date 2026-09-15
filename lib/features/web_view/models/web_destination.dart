@@ -28,12 +28,17 @@ class WebDestination {
   /// notch is there.
   final bool handlesOwnInsets;
 
+  /// Where this site keeps its cart, for a checkout the app finishes on the
+  /// site's behalf when the page itself shows no cart link to follow.
+  final String? cartUrl;
+
   const WebDestination({
     required this.id,
     required this.title,
     required this.url,
     this.promotesFramedLinks = false,
     this.handlesOwnInsets = false,
+    this.cartUrl,
   });
 
   /// The bare host, shown under the title so the user can see where they are
@@ -87,6 +92,11 @@ class WebDestinations {
     id: 'dicks_sporting_goods',
     title: "Dick's Sporting Goods",
     url: 'https://www.dickssportinggoods.com/',
+    // The cart page the site's own header link opens, minus the per-order
+    // parameters it adds — the store answers the bare one the same way.
+    cartUrl:
+        'https://www.dickssportinggoods.com/OrderItemDisplay'
+        '?storeId=15108&catalogId=12301&langId=-1',
   );
 
   static const List<WebDestination> all = [mirror, dicksSportingGoods];
@@ -99,4 +109,12 @@ class WebDestinations {
   /// else's layout, and it needs the status bar kept clear again.
   static bool handlesOwnInsets(String host) =>
       all.any((d) => d.handlesOwnInsets && d.isOwnSite(host));
+
+  /// The cart of whichever known site the browser is on, if any.
+  static String? cartUrlFor(String host) {
+    for (final destination in all) {
+      if (destination.isOwnSite(host)) return destination.cartUrl;
+    }
+    return null;
+  }
 }

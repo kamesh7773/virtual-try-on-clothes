@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -18,8 +19,10 @@ import '../models/web_load_failure.dart';
 import '../models/web_destination.dart';
 import '../models/web_navigation_decision.dart';
 import '../models/web_product.dart';
+import '../models/web_purchase_options.dart';
 import '../models/web_tap_report.dart';
 import '../view_models/history_flow_view_model.dart';
+import '../view_models/product_try_on_state.dart';
 import '../view_models/product_try_on_view_model.dart';
 import '../view_models/url_history_view_model.dart';
 import 'widgets/try_on_overlay.dart';
@@ -70,6 +73,16 @@ class WebViewScreen extends HookConsumerWidget {
     final pendingTap = useRef<WebTapReport?>(null);
     final pendingTapAt = useRef<DateTime?>(null);
 
+    // A checkout the page never answers would otherwise leave the preview
+    // saying "adding" for good. The script gives up on its own well inside
+    // this; this is for a script that was never heard from at all.
+    final checkoutTimeout = useRef<Timer?>(null);
+    useEffect(
+      () =>
+          () => checkoutTimeout.value?.cancel(),
+      const [],
+    );
+
     useEffect(() {
       // Reading the store is what makes a page recorded now sit above the
       // pages recorded last week.
@@ -109,6 +122,25 @@ class WebViewScreen extends HookConsumerWidget {
         pendingTap: pendingTap,
         pendingTapAt: pendingTapAt,
         onProduct: tryOnViewModel.setProduct,
+        onOptions: tryOnViewModel.setOptions,
+        onCheckoutDone: (cartUrl) {
+          checkoutTimeout.value?.cancel();
+          tryOnViewModel.dismissResult();
+          // With no cart to open the item is in the cart all the same, and
+          // the page is the place to find it from.
+          if (cartUrl == null && context.mounted) {
+            _showMessage(context, 'Added to cart.');
+          }
+        },
+        onCheckoutFailed: (reason) {
+          checkoutTimeout.value?.cancel();
+          tryOnViewModel.checkoutFailed(reason);
+          // The page is where the answer is — a prompt it put up, a notice
+          // by the button — and the size the user chose is still chosen on
+          // it. The picture would only hide that.
+          tryOnViewModel.dismissResult();
+          if (context.mounted) _showMessage(context, reason, isError: true);
+        },
         onVisitStarted: (url, tap, trigger) {
           visitId.value = history.record(
             url: url,
@@ -152,6 +184,47 @@ class WebViewScreen extends HookConsumerWidget {
       [destination.url],
     );
 
+    // Asks the page to add the product, in the size given, and waits for
+    // the bridge to say how it went — see `_bridgeScript`'s checkout.
+    void runCheckout({required String? size, required String? color}) {
+      _runCheckout(controller, size: size, color: color);
+      checkoutTimeout.value?.cancel();
+      checkoutTimeout.value = Timer(_checkoutLimit, () {
+        if (!context.mounted) return;
+        if (ref.read(productTryOnViewModelProvider).checkoutStep !=
+            CheckoutStep.adding) {
+          return;
+        }
+        const reason = 'The page did not respond. Add to cart from the page.';
+        tryOnViewModel.checkoutFailed(reason);
+        tryOnViewModel.dismissResult();
+        _showMessage(context, reason, isError: true);
+      });
+    }
+
+    void startCheckout() {
+      switch (tryOnViewModel.startCheckout()) {
+        case CheckoutPlan.pickColor:
+        case CheckoutPlan.pickSize:
+          // The preview shows the colour or size row; the pick comes back
+          // through `onColorPicked` / `onSizePicked` below.
+          return;
+        case CheckoutPlan.add:
+          final now = ref.read(productTryOnViewModelProvider);
+          runCheckout(size: now.checkoutSize, color: now.checkoutColor);
+        case CheckoutPlan.guide:
+          // The page's controls could not be read, so the page itself is
+          // the way to finish: close the picture, bring its size row into
+          // view, and say what to do there.
+          tryOnViewModel.dismissResult();
+          _guideToPurchase(controller);
+          _showMessage(
+            context,
+            'Choose a size on the page, then tap Add To Cart.',
+          );
+      }
+    }
+
     // Asked of where the browser is now, not of what opened it: following a
     // link off the mirror lands on a layout that needs the status bar kept
     // clear again, and going back gives the screen away again.
@@ -177,9 +250,16 @@ class WebViewScreen extends HookConsumerWidget {
           final navigator = Navigator.of(context);
 
           // The try-on lies over the page, so it is what a back gesture is
-          // asking to leave — not the page underneath it.
-          if (ref.read(productTryOnViewModelProvider).hasResult) {
-            tryOnViewModel.dismissResult();
+          // asking to leave — not the page underneath it. A size row open
+          // over the try-on is one step further out again.
+          final tryOnNow = ref.read(productTryOnViewModelProvider);
+          if (tryOnNow.hasResult) {
+            if (tryOnNow.checkoutStep == CheckoutStep.pickingSize ||
+                tryOnNow.checkoutStep == CheckoutStep.pickingColor) {
+              tryOnViewModel.cancelCheckout();
+            } else {
+              tryOnViewModel.dismissResult();
+            }
             return;
           }
           if (await controller.canGoBack()) {
@@ -290,6 +370,29 @@ class WebViewScreen extends HookConsumerWidget {
                       child: TryOnPreview(
                         imageUrl: tryOn.resultUrl!,
                         onClose: tryOnViewModel.dismissResult,
+                        canCheckout: tryOn.canCheckout,
+                        step: tryOn.checkoutStep,
+                        sizes: tryOn.sizes,
+                        colors: tryOn.colors,
+                        onCheckout: startCheckout,
+                        onColorPicked: (label) {
+                          // Colour settled; the size may still be open.
+                          if (tryOnViewModel.chooseColor(label) ==
+                              CheckoutPlan.add) {
+                            final now = ref.read(productTryOnViewModelProvider);
+                            runCheckout(size: now.checkoutSize, color: label);
+                          }
+                        },
+                        onSizePicked: (label) {
+                          tryOnViewModel.chooseSize(label);
+                          runCheckout(
+                            size: label,
+                            color: ref
+                                .read(productTryOnViewModelProvider)
+                                .checkoutColor,
+                          );
+                        },
+                        onCancelPick: tryOnViewModel.cancelCheckout,
                       ),
                     ),
                 ],
@@ -334,6 +437,11 @@ WebViewController _createController({
   required ObjectRef<WebTapReport?> pendingTap,
   required ObjectRef<DateTime?> pendingTapAt,
   required void Function(WebProduct? product) onProduct,
+  required void Function(WebPurchaseOptions options) onOptions,
+  // The cart the checkout is taking the user to, or null when the item went
+  // in but the page showed no cart to open.
+  required void Function(String? cartUrl) onCheckoutDone,
+  required void Function(String reason) onCheckoutFailed,
   required void Function(String url, WebTapReport? tap, VisitTrigger trigger)
   onVisitStarted,
   required void Function(String? title) onVisitFinished,
@@ -610,6 +718,41 @@ WebViewController _createController({
       switch (WebBridgeMessage.tryParse(message.message)) {
         case WebProductMessage(:final product):
           onProduct(product);
+
+        case WebOptionsMessage(:final options):
+          onOptions(options);
+
+        case WebCheckoutMessage(:final status, :final reason, :final cartUrl):
+          if (kDebugMode) {
+            debugPrint('${stamp()} checkout ${status.name} ${reason ?? ''}');
+          }
+          if (status != WebCheckoutStatus.added) {
+            // A silence is a refusal too: a cart page with nothing in it
+            // is the one outcome worse than saying the add did not work.
+            onCheckoutFailed(
+              reason ?? 'The page could not add this to the cart.',
+            );
+            return;
+          }
+
+          // The page's own cart link first, then the cart this app knows
+          // for the site.
+          final cart = cartUrl ?? WebDestinations.cartUrlFor(currentHost.value);
+          onCheckoutDone(cart);
+          if (cart == null) return;
+
+          // Filed so the history reads "Checkout" against the product page,
+          // not a cart appearing from nowhere.
+          pendingTap.value = WebTapReport(
+            promote: false,
+            url: cart,
+            trigger: VisitTrigger.element,
+            label: 'Checkout',
+            context: 'Try-on',
+            sourceUrl: currentUrl,
+          );
+          pendingTapAt.value = DateTime.now();
+          controller.loadRequest(Uri.parse(cart));
 
         case WebPaintedMessage(:final url):
           if (kDebugMode) debugPrint('${stamp()} painted → $url');
@@ -915,6 +1058,32 @@ const List<Duration> _paintProbeRetries = [
   Duration(milliseconds: 4000),
 ];
 
+/// How long the preview waits for the page to answer a checkout before
+/// giving up on it. The script gives up on its own inside thirty seconds;
+/// this is for a script that was never installed to answer at all.
+const Duration _checkoutLimit = Duration(seconds: 40);
+
+void _runCheckout(
+  WebViewController controller, {
+  required String? size,
+  required String? color,
+}) {
+  final sizeArg = size == null ? 'null' : jsonEncode(size);
+  final colorArg = color == null ? 'null' : jsonEncode(color);
+  controller
+      .runJavaScript(
+        'if (window.__livelookCheckout) '
+        'window.__livelookCheckout($sizeArg, $colorArg);',
+      )
+      .catchError((Object _) {});
+}
+
+void _guideToPurchase(WebViewController controller) {
+  controller
+      .runJavaScript('if (window.__livelookGuide) window.__livelookGuide();')
+      .catchError((Object _) {});
+}
+
 void _applyPaintProbe(WebViewController controller) {
   controller.runJavaScript(_paintProbeScript).catchError((Object _) {});
 }
@@ -1216,14 +1385,620 @@ const String _bridgeScript = r"""
     LiveLookBridge.postMessage(JSON.stringify(payload));
   }
 
+  // ─── What the page lets the user do about buying ───────────────────
+  // Read from the page's controls rather than its data: a size row and an
+  // add-to-cart button are what the user would press, and pressing them on
+  // the user's behalf is what the checkout in the preview does. Everything
+  // here is matched on what the controls say, not on how the site names
+  // its classes — the words are the stable part.
+  // What a size can look like, across the store: lettered (S, XXL, 2XL,
+  // 1X, YM for youth), paired (S/M), shoe sizes with a width (10.5, 9 W,
+  // 12 EE, 7 1/2), trouser sizes (32x30, 34W x 32L, W32 L30), bra sizes
+  // (34B), hat sizes (7 1/4), children's (4T, 5Y), and one-size. Anything
+  // longer than a dozen characters is a description, not a size.
+  var SIZE_TOKEN = new RegExp(
+    '^(' +
+      'XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|[2-6]XL|[1-4]X|Y(XS|S|M|L|XL)|' +
+      '(XXS|XS|S|M|L|XL|XXL)\\s?[\\/-]\\s?(XS|S|M|L|XL|XXL|XXXL)|' +
+      'OS|ONE SIZE|O\\/S|' +
+      '\\d{1,2}(\\.\\d)?\\s?(W|M|D|N|B|C|E|EE|EEE|XW|WW|H|R|T|Y|K)?|' +
+      '\\d{1,2}\\s\\d\\/\\d|' +
+      '\\d{2}\\s?[xX\u00d7]\\s?\\d{2}|\\d{2}\\s?W\\s?[xX\u00d7]?\\s?\\d{2}\\s?L|W\\s?\\d{2}\\s?L\\s?\\d{2}|' +
+      '\\d{2}[A-K]{1,3}' +
+    ')$', 'i');
+  var ADD_TO_CART = /^add to (cart|bag|basket)$/i;
+
+  function visible(el) {
+    var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+    return !!(rect && rect.width > 0 && rect.height > 0);
+  }
+
+  function isDisabled(el) {
+    if (el.disabled) return true;
+    if (el.getAttribute('aria-disabled') === 'true') return true;
+    var parent = el.parentElement;
+    var cls = (el.className || '') + ' ' + (parent && parent.className || '');
+    if (/disabled|unavailable|out-?of-?stock|sold-?out|strike/i.test(cls)) {
+      return true;
+    }
+    var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    var deco = style ? (style.textDecorationLine || style.textDecoration || '') : '';
+    return /line-through/.test(deco);
+  }
+
+  function isSelected(el) {
+    if (el.getAttribute('aria-pressed') === 'true') return true;
+    if (el.getAttribute('aria-checked') === 'true') return true;
+    if (el.getAttribute('aria-selected') === 'true') return true;
+    if (el.getAttribute('aria-current') === 'true') return true;
+    if (/(^|[\s_-])(selected|active|checked)([\s_-]|$)/i.test(el.className || '')) {
+      return true;
+    }
+    var radio = el.querySelector ? el.querySelector('input[type="radio"]') : null;
+    if (radio && radio.checked) return true;
+    return !!(el.tagName === 'LABEL' && el.control && el.control.checked);
+  }
+
+  // The size controls are the buttons that say nothing but a size, and they
+  // come as a row: the ancestor holding the most of them holds the row. Each
+  // control is offered to its nearest three ancestors, the nearest winning
+  // a tie, so a row of individually wrapped buttons is still one row.
+  function sizeControls() {
+    var candidates = document.querySelectorAll(
+      'button, [role="radio"], [role="option"], label');
+    var groups = new Map();
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      var text = words(el);
+      if (!text || !SIZE_TOKEN.test(text) || !visible(el)) continue;
+      var ancestor = el.parentElement;
+      for (var depth = 0; ancestor && depth < 3; depth++) {
+        var list = groups.get(ancestor);
+        if (!list) groups.set(ancestor, list = []);
+        if (list.indexOf(el) < 0) list.push(el);
+        ancestor = ancestor.parentElement;
+      }
+    }
+    var best = null;
+    groups.forEach(function (list, ancestor) {
+      if (!best || list.length > best.list.length ||
+          (list.length === best.list.length && best.ancestor !== ancestor &&
+           best.ancestor.contains(ancestor))) {
+        best = { ancestor: ancestor, list: list };
+      }
+    });
+    return best && best.list.length >= 2 ? best.list : [];
+  }
+
+  // The text an element carries itself, not through its children: the
+  // "Color:" of a "Color: Red" row, without the "Red".
+  function ownText(el) {
+    var text = '';
+    for (var i = 0; i < el.childNodes.length; i++) {
+      if (el.childNodes[i].nodeType === 3) text += el.childNodes[i].nodeValue;
+    }
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  function nameOf(el) {
+    var name = el.getAttribute('aria-label') || el.getAttribute('title') ||
+      el.getAttribute('data-color') || el.getAttribute('data-color-name') || '';
+    if (!name) {
+      var img = el.tagName === 'IMG' ? el : (el.querySelector ? el.querySelector('img') : null);
+      if (img) name = img.getAttribute('alt') || img.getAttribute('title') || '';
+    }
+    if (!name) name = words(el);
+    return name.replace(/\s+/g, ' ').trim();
+  }
+
+  function imageOf(el) {
+    var img = el.tagName === 'IMG' ? el : (el.querySelector ? el.querySelector('img') : null);
+    return img ? (img.currentSrc || img.src || '') : '';
+  }
+
+  function sameName(a, b) {
+    var x = String(a).toLowerCase().replace(/[^a-z0-9]/g, '');
+    var y = String(b).toLowerCase().replace(/[^a-z0-9]/g, '');
+    return x && y && (x === y || x.indexOf(y) >= 0 || y.indexOf(x) >= 0);
+  }
+
+  // The colour swatches: small clickable things with a name — an alt, a
+  // title, an aria-label — gathered under the nearest "Color" heading. Each
+  // comes back as { el, label, image }.
+  function colorControls() {
+    var headings = document.querySelectorAll(
+      'label, legend, span, div, p, h2, h3, h4, dt, strong, b');
+    var anchor = null;
+    for (var i = 0; i < headings.length; i++) {
+      var own = ownText(headings[i]);
+      if (own.length < 40 && /^colou?r\b/i.test(own) && visible(headings[i])) {
+        anchor = headings[i];
+        break;
+      }
+    }
+    if (!anchor) return [];
+
+    // What the heading says is chosen — "Color: Red" — for pages that mark
+    // the swatch no other way.
+    var chosen = words(anchor.parentElement || anchor).replace(/^[\s\S]*?colou?r:?\s*/i, '').split('\n')[0].trim();
+    if (chosen.length > 40 || /please|select/i.test(chosen)) chosen = '';
+
+    var ancestor = anchor.parentElement;
+    for (var depth = 0; ancestor && depth < 5; depth++) {
+      var found = [];
+      var nodes = ancestor.querySelectorAll(
+        'button, [role="radio"], [role="option"], [role="button"], a, li, img');
+      for (var j = 0; j < nodes.length; j++) {
+        var node = nodes[j];
+        if (!visible(node)) continue;
+        var rect = node.getBoundingClientRect();
+        if (rect.width < 16 || rect.width > 220 || rect.height > 220) continue;
+        var clickable = node.tagName === 'IMG'
+          ? (node.closest('button, a, [role="radio"], [role="option"], [role="button"], li') || node.parentElement)
+          : node;
+        var name = nameOf(clickable) || nameOf(node);
+        if (!name || name.length > 60 || SIZE_TOKEN.test(name)) continue;
+        var duplicate = false;
+        for (var k = 0; k < found.length; k++) {
+          if (found[k].el === clickable || sameName(found[k].label, name)) { duplicate = true; break; }
+        }
+        if (duplicate) continue;
+        found.push({
+          el: clickable,
+          label: name,
+          image: imageOf(node),
+          selected: isSelected(clickable) || (clickable.parentElement && isSelected(clickable.parentElement)) ||
+            (chosen ? sameName(chosen, name) : false)
+        });
+      }
+      if (found.length >= 2) return found;
+      ancestor = ancestor.parentElement;
+    }
+    return [];
+  }
+
+  function addToCartControl() {
+    var candidates = document.querySelectorAll(
+      'button, [role="button"], input[type="submit"]');
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      var text = words(el) || el.value || el.getAttribute('aria-label') || '';
+      if (ADD_TO_CART.test(text.trim()) && visible(el)) return el;
+    }
+    return null;
+  }
+
+  function cartLink() {
+    var link = document.querySelector('a[href*="OrderItemDisplay"]') ||
+      document.querySelector(
+        'a[href*="/cart" i], a[href*="ShoppingCart" i], a[aria-label*="cart" i]');
+    return link && link.href ? link.href : null;
+  }
+
+  function cartCount() {
+    var link = document.querySelector(
+      'a[href*="OrderItemDisplay"], a[href*="/cart" i], a[aria-label*="cart" i]');
+    if (!link) return null;
+    var match = words(link).match(/\d+/);
+    return match ? parseInt(match[0], 10) : null;
+  }
+
+  function readOptions() {
+    var controls = sizeControls();
+    var sizes = [];
+    for (var i = 0; i < controls.length; i++) {
+      sizes.push({
+        label: words(controls[i]),
+        available: !isDisabled(controls[i]),
+        selected: isSelected(controls[i])
+      });
+    }
+    var swatches = colorControls();
+    var colors = [];
+    for (var j = 0; j < swatches.length; j++) {
+      colors.push({
+        label: swatches[j].label,
+        image: swatches[j].image,
+        available: !isDisabled(swatches[j].el),
+        selected: !!swatches[j].selected
+      });
+    }
+    return {
+      type: 'options',
+      url: location.href,
+      sizes: sizes,
+      colors: colors,
+      addToCart: !!addToCartControl(),
+      cartUrl: cartLink()
+    };
+  }
+
+  var lastOptionsKey = null;
+
+  function reportOptions() {
+    // Only a product page has anything to buy on it.
+    if (!lastProductKey) return;
+    var payload = readOptions();
+    var key = JSON.stringify(payload);
+    if (key === lastOptionsKey) return;
+    lastOptionsKey = key;
+    var chosenColor = null;
+    for (var c = 0; c < payload.colors.length; c++) {
+      if (payload.colors[c].selected) chosenColor = payload.colors[c].label;
+    }
+    console.log('livelook: options ' + payload.sizes.length + ' sizes, ' +
+      payload.colors.length + ' colors' + (chosenColor ? ' (' + chosenColor + ' chosen)' : '') +
+      ', add to cart ' + (payload.addToCart ? 'found' : 'missing'));
+    LiveLookBridge.postMessage(key);
+  }
+
+  function errorText() {
+    var alerts = document.querySelectorAll('[role="alert"], [class*="error" i]');
+    for (var i = 0; i < alerts.length; i++) {
+      if (!visible(alerts[i])) continue;
+      var text = words(alerts[i]);
+      if (text && /size|select|unavailable|out of stock|sold out|try again/i.test(text)) {
+        return text.slice(0, 160);
+      }
+    }
+    return null;
+  }
+
+  function describe(el) {
+    if (!el) return 'nothing';
+    var cls = String(el.className || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    return el.tagName.toLowerCase() + (cls ? '.' + cls : '') +
+      ' "' + words(el).slice(0, 40) + '"' +
+      (el.getAttribute('aria-pressed') ? ' pressed=' + el.getAttribute('aria-pressed') : '') +
+      (el.getAttribute('aria-checked') ? ' checked=' + el.getAttribute('aria-checked') : '') +
+      (el.disabled ? ' disabled' : '');
+  }
+
+  // A tap as the page would see one from a finger: the pointer and mouse
+  // events first, then the click. A bare `click()` is enough for a plain
+  // button, but a component that arms itself on pointerdown ignores it.
+  function press(el) {
+    var control = el.tagName === 'LABEL' && el.control ? el.control : el;
+    try { control.focus(); } catch (e) {}
+    var rect = control.getBoundingClientRect();
+    var x = rect.left + rect.width / 2;
+    var y = rect.top + rect.height / 2;
+    function fire(type, Ctor, extra) {
+      try {
+        var init = { bubbles: true, cancelable: true, composed: true,
+          clientX: x, clientY: y, screenX: x, screenY: y, view: window };
+        for (var key in extra) init[key] = extra[key];
+        control.dispatchEvent(new Ctor(type, init));
+      } catch (e) {}
+    }
+    var touch = { pointerId: 1, pointerType: 'touch', isPrimary: true };
+    if (window.PointerEvent) fire('pointerdown', PointerEvent, touch);
+    fire('mousedown', MouseEvent, { button: 0, buttons: 1 });
+    if (window.PointerEvent) fire('pointerup', PointerEvent, touch);
+    fire('mouseup', MouseEvent, { button: 0 });
+    try { control.click(); } catch (e) { fire('click', MouseEvent, { button: 0 }); }
+    if (control.tagName === 'INPUT' &&
+        (control.type === 'radio' || control.type === 'checkbox') && !control.checked) {
+      control.checked = true;
+      fire('input', Event, {});
+      fire('change', Event, {});
+    }
+  }
+
+  // The site's own verdict, where it gives one. This retailer logs its
+  // add-to-cart result to the console as JSON with a `callOrigin` and a
+  // `success` — far surer than watching the page for a badge to change.
+  var addToCartVerdict = null;
+  function watchVerdicts(name) {
+    var original = console[name];
+    if (typeof original !== 'function') return;
+    console[name] = function () {
+      for (var i = 0; i < arguments.length; i++) {
+        var arg = arguments[i];
+        var text = typeof arg === 'string' ? arg : null;
+        if (!text && arg && typeof arg === 'object' && arg.message) {
+          text = Array.isArray(arg.message) ? arg.message.join(' ') : String(arg.message);
+        }
+        if (!text || text.indexOf('callOrigin') < 0) continue;
+        // The verdict arrives as JSON inside the site's logger's own JSON,
+        // quotes escaped, so it is read with a pattern rather than parsed.
+        var success = /\\?"success\\?"\s*:\s*\\?"?(true|false)/i.exec(text);
+        if (!success) continue;
+        var error = /\\?"errorMessage\\?"\s*:\s*\\?"([^"\\]*)/i.exec(text);
+        addToCartVerdict = {
+          success: success[1].toLowerCase() === 'true',
+          error: error && error[1] && error[1] !== 'none' ? error[1] : ''
+        };
+        console.log('livelook: site verdict ' + (addToCartVerdict.success ? 'added' : 'refused: ' + addToCartVerdict.error));
+      }
+      return original.apply(console, arguments);
+    };
+  }
+  watchVerdicts('log');
+  watchVerdicts('info');
+  watchVerdicts('warn');
+  watchVerdicts('error');
+
+  // What the page asks its servers while a checkout is under way. Kept
+  // only during one, and only to be read back when it fails: the answer
+  // to "why did nothing happen" is almost always in here.
+  var netLog = null;
+  function noteRequest(method, url, status, ms) {
+    if (!netLog) return;
+    var path = String(url).replace(/^https?:\/\/[^\/]+/, '').slice(0, 120);
+    netLog.push(method + ' ' + path + ' → ' + status + ' (' + ms + 'ms)');
+  }
+  if (window.fetch && !window.__livelookFetchHooked) {
+    window.__livelookFetchHooked = true;
+    var nativeFetch = window.fetch;
+    window.fetch = function (input, init) {
+      var url = typeof input === 'string' ? input : (input && input.url) || '';
+      var method = (init && init.method) || (input && input.method) || 'GET';
+      var at = Date.now();
+      return nativeFetch.apply(this, arguments).then(function (response) {
+        noteRequest(method, url, response.status, Date.now() - at);
+        return response;
+      }, function (error) {
+        noteRequest(method, url, 'error ' + (error && error.message), Date.now() - at);
+        throw error;
+      });
+    };
+  }
+  if (window.XMLHttpRequest && !window.__livelookXhrHooked) {
+    window.__livelookXhrHooked = true;
+    var nativeOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (method, url) {
+      var at = Date.now();
+      var xhr = this;
+      xhr.addEventListener('loadend', function () {
+        noteRequest(method, url, xhr.status || 'no status', Date.now() - at);
+      });
+      return nativeOpen.apply(this, arguments);
+    };
+  }
+
+  // Anything the page has put up over itself, which the preview hides.
+  function dialogsNow() {
+    var nodes = document.querySelectorAll(
+      '[role="dialog"], [aria-modal="true"], [class*="modal" i], [class*="drawer" i], ' +
+      '[class*="flyout" i], [class*="toast" i], [role="alert"], [aria-live]');
+    var seen = [];
+    for (var i = 0; i < nodes.length; i++) {
+      if (!visible(nodes[i])) continue;
+      var text = words(nodes[i]).slice(0, 160);
+      if (text && seen.indexOf(text) < 0) seen.push(text);
+    }
+    return seen;
+  }
+
+  // The cart as the store's own API has it. Same-origin and sent by the
+  // page itself on every cart view, so asking again costs nothing. A store
+  // with no such API answers nothing, and the check is simply not made.
+  function cartItems() {
+    if (!/dickssportinggoods\.com$/i.test(location.hostname)) return Promise.resolve(null);
+    return fetch('/api/v2/carts', { credentials: 'include' }).then(function (response) {
+      if (response.status === 400 || response.status === 404) return 0;
+      if (!response.ok) return null;
+      return response.json().then(function (json) {
+        console.log('livelook: cart api ' + response.status + ' ' + JSON.stringify(json).slice(0, 300));
+        var found = null;
+        (function walk(node, depth) {
+          if (found !== null || !node || depth > 4 || typeof node !== 'object') return;
+          for (var key in node) {
+            var value = node[key];
+            if (Array.isArray(value) && /item/i.test(key)) { found = value.length; return; }
+          }
+          for (var key2 in node) walk(node[key2], depth + 1);
+        })(json, 0);
+        return found === null ? 1 : found;
+      });
+    }).catch(function () { return null; });
+  }
+
+  // The part of the page the buying happens in: the smallest ancestor of
+  // the Add To Cart button that also holds the size row (or the swatches).
+  // A refusal — "Please Select Color" — is written into it, in words, and
+  // reading it before and after the press is what catches those words
+  // whatever the page calls the box they sit in.
+  function purchasePanel() {
+    var add = addToCartControl();
+    var mark = sizeControls()[0] || (colorControls()[0] || {}).el;
+    var node = add;
+    for (var depth = 0; node && depth < 10; depth++) {
+      if (!mark || node.contains(mark)) return node;
+      node = node.parentElement;
+    }
+    return add ? add.parentElement : document.body;
+  }
+
+  function panelLines(panel) {
+    return panel ? words(panel).split(/\s{2,}|\n/) : [];
+  }
+
+  function newRefusal(before, after) {
+    for (var i = 0; i < after.length; i++) {
+      var line = after[i].trim();
+      if (!line || line.length > 140 || before.indexOf(after[i]) >= 0) continue;
+      if (/please|select|required|choose|unavailable|out of stock|sold out|error|try again/i.test(line)) {
+        return line;
+      }
+    }
+    return null;
+  }
+
+  // Adds the product to the cart the way the user would: the size button,
+  // then Add to Cart, then a watch for the answer — the site's own logged
+  // verdict, its cart API, an error appearing, or the cart badge changing.
+  // Answers over the bridge once, with `added`, or `failed` and a reason.
+  // Never `timeout` into the cart: a cart page with nothing in it is the
+  // one outcome worse than a refusal.
+  window.__livelookCheckout = function (sizeLabel, colorLabel) {
+    var answered = false;
+    function answer(status, reason) {
+      if (answered) return;
+      answered = true;
+      netLog = null;
+      console.log('livelook: checkout ' + status + (reason ? ' — ' + reason : ''));
+      LiveLookBridge.postMessage(JSON.stringify({
+        type: 'checkout',
+        status: status,
+        reason: reason || '',
+        cartUrl: cartLink()
+      }));
+    }
+
+    addToCartVerdict = null;
+    var itemsBefore = null;
+    cartItems().then(function (count) { itemsBefore = count; });
+    var badgeBefore = cartCount();
+    var started = Date.now();
+
+    // The choices to make on the page, in the order the page wants them.
+    // Each is looked up afresh at every step: choosing a colour can
+    // redraw the size row, and a node held from before is then nobody's.
+    var steps = [];
+    if (colorLabel) {
+      steps.push({ kind: 'Color', label: colorLabel, wait: 1500, find: function () {
+        return colorControls().map(function (c) { return { el: c.el, label: c.label, selected: c.selected }; });
+      } });
+    }
+    if (sizeLabel) {
+      steps.push({ kind: 'Size', label: sizeLabel, wait: 2500, find: function () {
+        return sizeControls().map(function (el) { return { el: el, label: words(el), selected: isSelected(el) }; });
+      } });
+    }
+
+    function choose(step, done) {
+      function current() {
+        var all = step.find();
+        for (var i = 0; i < all.length; i++) {
+          if (sameName(all[i].label, step.label)) return all[i];
+        }
+        return null;
+      }
+      var target = current();
+      if (!target) return answer('failed', step.kind + ' ' + step.label + ' is no longer offered on the page.');
+      if (isDisabled(target.el)) return answer('failed', step.kind + ' ' + step.label + ' is out of stock.');
+      if (target.selected) {
+        console.log('livelook: ' + step.kind.toLowerCase() + ' already chosen: ' + describe(target.el));
+        return done();
+      }
+      console.log('livelook: pressing ' + step.kind.toLowerCase() + ' ' + describe(target.el));
+      press(target.el);
+      var from = Date.now();
+      (function until() {
+        var now = current();
+        var taken = !!(now && now.selected);
+        if (!taken && Date.now() - from < step.wait) return setTimeout(until, 150);
+        console.log('livelook: ' + step.kind.toLowerCase() + ' ' + (taken ? 'taken' : 'not marked selected') +
+          ' after ' + (Date.now() - from) + 'ms: ' + describe(now ? now.el : null));
+        done();
+      })();
+    }
+
+    (function next(index) {
+      if (index < steps.length) return choose(steps[index], function () { next(index + 1); });
+      addToCart();
+    })(0);
+
+    function addToCart() {
+
+      // The page checks stock for the size before it will sell it, and
+      // disables Add To Cart while it does. Press only once the button has
+      // been enabled for a few readings in a row, or five seconds have gone.
+      var settled = 0;
+      var settleFrom = Date.now();
+      (function untilSettled() {
+        var add = addToCartControl();
+        settled = add && !isDisabled(add) ? settled + 1 : 0;
+        if (settled < 3 && Date.now() - settleFrom < 5000) return setTimeout(untilSettled, 200);
+
+        add = addToCartControl();
+        if (!add) return answer('failed', 'The page has no Add To Cart button right now.');
+        if (isDisabled(add)) return answer('failed', 'Add To Cart is not available for this selection.');
+        var errorBefore = errorText();
+        var dialogsBefore = dialogsNow();
+        var panel = purchasePanel();
+        var panelBefore = panelLines(panel);
+        netLog = [];
+        console.log('livelook: pressing ' + describe(add) + ' after ' + (Date.now() - started) + 'ms');
+        press(add);
+        var pressedAt = Date.now();
+        setTimeout(function () {
+          if (answered) return;
+          var fresh = dialogsNow().filter(function (t) { return dialogsBefore.indexOf(t) < 0; });
+          console.log('livelook: 2s after press — ' + netLog.length + ' requests' +
+            (fresh.length ? '; new on screen: ' + JSON.stringify(fresh) : '; nothing new on screen'));
+        }, 2000);
+
+        var checking = false;
+        (function watch() {
+          if (addToCartVerdict) {
+            if (addToCartVerdict.success) return answer('added');
+            return answer('failed', addToCartVerdict.error || 'The page could not add this to the cart.');
+          }
+          var error = errorText();
+          if (error && error !== errorBefore) return answer('failed', error);
+          var refusal = newRefusal(panelBefore, panelLines(panel));
+          if (refusal) return answer('failed', refusal);
+
+          var badge = cartCount();
+          if (badge !== null && (badgeBefore === null ? badge > 0 : badge > badgeBefore)) {
+            return answer('added');
+          }
+          var dialog = document.querySelector('[role="dialog"]');
+          if (dialog && visible(dialog) && /added to (your )?(cart|bag)/i.test(words(dialog))) {
+            return answer('added');
+          }
+
+          var elapsed = Date.now() - pressedAt;
+          // Every second or so, ask the store itself.
+          if (!checking && elapsed > 1200 && Math.floor(elapsed / 1000) !== Math.floor((elapsed - 250) / 1000)) {
+            checking = true;
+            cartItems().then(function (count) {
+              checking = false;
+              if (answered || count === null) return;
+              if (itemsBefore === null ? count > 0 : count > itemsBefore) answer('added');
+            });
+          }
+          // A disabled button is the page still working on it; give it
+          // time. One that has come back with nothing to show is not.
+          var button = addToCartControl();
+          var busy = button && isDisabled(button);
+          if ((elapsed > 12000 && !busy) || elapsed > 30000) {
+            console.log('livelook: checkout gave up after ' + elapsed + 'ms; add button now ' + describe(button));
+            console.log('livelook: requests since press: ' + (netLog.length ? '\n  ' + netLog.join('\n  ') : 'none'));
+            var fresh = dialogsNow().filter(function (t) { return dialogsBefore.indexOf(t) < 0; });
+            console.log('livelook: on screen now: ' + (fresh.length ? JSON.stringify(fresh) : 'nothing new'));
+            netLog = null;
+            return answer('failed', 'The page did not confirm the item was added. Try Add To Cart on the page.');
+          }
+          setTimeout(watch, 250);
+        })();
+      })();
+    }
+  };
+
+  // For a page whose controls could not be read: bring the buying part of
+  // it into view so the user can finish there.
+  window.__livelookGuide = function () {
+    var target = sizeControls()[0] || addToCartControl();
+    if (target && target.scrollIntoView) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
   // Called again from the app on every injection, so a page that arrives
   // in pieces is looked at each time rather than only on its own schedule.
-  window.__livelookScan = reportProduct;
+  window.__livelookScan = function () {
+    reportProduct();
+    reportOptions();
+  };
 
-  reportProduct();
+  window.__livelookScan();
   // Retail pages fill themselves in after the first paint, and a single-page
   // site swaps products without ever loading again.
-  setInterval(reportProduct, 2000);
+  setInterval(window.__livelookScan, 2000);
 
   document.addEventListener('click', function (event) {
     var node = event.target;

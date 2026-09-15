@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:virtual_try_on/features/web_view/models/visit_trigger.dart';
 import 'package:virtual_try_on/features/web_view/models/web_bridge_message.dart';
+import 'package:virtual_try_on/features/web_view/models/web_purchase_options.dart';
 
 void main() {
   group('taps', () {
@@ -127,6 +128,174 @@ void main() {
       expect(
         WebBridgeMessage.tryParse(
           jsonEncode({'type': 'painted', 'url': 'not a url'}),
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('purchase options', () {
+    test('reads the sizes and controls the page offers', () {
+      final message = WebBridgeMessage.tryParse(
+        jsonEncode({
+          'type': 'options',
+          'url': 'https://www.dickssportinggoods.com/p/polo',
+          'sizes': [
+            {'label': 'S', 'available': true, 'selected': false},
+            {'label': 'M', 'available': false},
+            {'label': 'L', 'selected': true},
+          ],
+          'addToCart': true,
+          'cartUrl': 'https://www.dickssportinggoods.com/OrderItemDisplay?a=1',
+        }),
+      );
+
+      expect(message, isA<WebOptionsMessage>());
+      final options = (message! as WebOptionsMessage).options;
+      expect(options.sizes.map((s) => s.label), ['S', 'M', 'L']);
+      expect(options.sizes[1].available, isFalse);
+      expect(options.selectedSize?.label, 'L');
+      expect(options.needsSize, isFalse);
+      expect(options.canAddToCart, isTrue);
+      expect(options.cartUrl, contains('OrderItemDisplay'));
+    });
+
+    test('a size row with nothing picked needs a size', () {
+      final options = WebPurchaseOptions.tryParse({
+        'url': 'https://example.com/p',
+        'sizes': [
+          {'label': 'S'},
+          {'label': 'M'},
+        ],
+        'addToCart': true,
+      })!;
+
+      expect(options.needsSize, isTrue);
+      expect(options.selectedSize, isNull);
+    });
+
+    test('junk sizes and a non-web cart link are dropped', () {
+      final options = WebPurchaseOptions.tryParse({
+        'url': 'https://example.com/p',
+        'sizes': [
+          {'label': 'S'},
+          {'label': 42},
+          'M',
+          {'label': 'a label far too long to be a size'},
+        ],
+        'cartUrl': 'javascript:alert(1)',
+      })!;
+
+      expect(options.sizes.map((s) => s.label), ['S']);
+      expect(options.cartUrl, isNull);
+      expect(options.canAddToCart, isFalse);
+    });
+
+    test('reads the colour swatches and settles the colour from the URL', () {
+      final options = WebPurchaseOptions.tryParse({
+        'url':
+            'https://www.dickssportinggoods.com/p/polo?color=Football%20Dog%20Convo%20Red',
+        'colors': [
+          {
+            'label': 'Carolina Convo Blue',
+            'image': 'https://dks.scene7.com/is/image/blue',
+          },
+          {'label': 'Football Dog Convo Red', 'image': '/relative.png'},
+        ],
+        'addToCart': true,
+      })!;
+
+      expect(options.colors.map((c) => c.label), [
+        'Carolina Convo Blue',
+        'Football Dog Convo Red',
+      ]);
+      expect(options.colors.first.imageUrl, contains('scene7'));
+      expect(options.colors.last.imageUrl, isNull);
+      expect(options.colorInUrl, 'Football Dog Convo Red');
+      expect(options.resolvedColor?.label, 'Football Dog Convo Red');
+      expect(options.needsColor, isFalse);
+    });
+
+    test('a colour the page has marked wins over the URL', () {
+      final options = WebPurchaseOptions.tryParse({
+        'url': 'https://example.com/p?color=Red',
+        'colors': [
+          {'label': 'Red'},
+          {'label': 'Blue', 'selected': true},
+        ],
+      })!;
+
+      expect(options.resolvedColor?.label, 'Blue');
+    });
+
+    test('colours with nothing to settle them have to be asked for', () {
+      final options = WebPurchaseOptions.tryParse({
+        'url': 'https://example.com/p',
+        'colors': [
+          {'label': 'Red'},
+          {'label': 'Blue'},
+        ],
+      })!;
+
+      expect(options.needsColor, isTrue);
+
+      final sold = WebPurchaseOptions.tryParse({
+        'url': 'https://example.com/p?color=red',
+        'colors': [
+          {'label': 'Red', 'available': false},
+          {'label': 'Blue'},
+        ],
+      })!;
+      // The address names a colour that cannot be bought.
+      expect(sold.needsColor, isTrue);
+    });
+
+    test('colour names match loosely', () {
+      const red = WebColorOption(label: 'Football Dog Convo Red');
+      expect(red.isCalled('football-dog-convo-red'), isTrue);
+      expect(red.isCalled('FOOTBALL DOG CONVO RED'), isTrue);
+      expect(red.isCalled('Blue'), isFalse);
+    });
+
+    test('options without a page are no options', () {
+      expect(
+        WebBridgeMessage.tryParse(jsonEncode({'type': 'options'})),
+        isNull,
+      );
+    });
+  });
+
+  group('checkout', () {
+    test('reads how the page answered', () {
+      final message = WebBridgeMessage.tryParse(
+        jsonEncode({
+          'type': 'checkout',
+          'status': 'failed',
+          'reason': '  Please select a size  ',
+          'cartUrl': 'https://example.com/cart',
+        }),
+      );
+
+      expect(message, isA<WebCheckoutMessage>());
+      final checkout = message! as WebCheckoutMessage;
+      expect(checkout.status, WebCheckoutStatus.failed);
+      expect(checkout.reason, 'Please select a size');
+      expect(checkout.cartUrl, 'https://example.com/cart');
+    });
+
+    test('an empty reason is no reason', () {
+      final message = WebBridgeMessage.tryParse(
+        jsonEncode({'type': 'checkout', 'status': 'added', 'reason': ''}),
+      );
+
+      expect((message! as WebCheckoutMessage).reason, isNull);
+      expect((message as WebCheckoutMessage).cartUrl, isNull);
+    });
+
+    test('an unknown status is dropped', () {
+      expect(
+        WebBridgeMessage.tryParse(
+          jsonEncode({'type': 'checkout', 'status': 'maybe'}),
         ),
         isNull,
       );
