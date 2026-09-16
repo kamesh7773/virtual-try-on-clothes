@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -2256,8 +2257,7 @@ void _applyBridge(WebViewController controller, {required bool promote}) {
       .catchError((Object _) {});
 }
 
-/// Camera and microphone are what the mirror needs, and the OS has already
-/// asked for both by the time a page can request them. Anything else — a
+/// Camera and microphone are what the mirror needs. Anything else — a
 /// location prompt, a MIDI device — is denied rather than passed through.
 void _handlePermissionRequest(PlatformWebViewPermissionRequest request) {
   const allowed = <WebViewPermissionResourceType>{
@@ -2265,11 +2265,42 @@ void _handlePermissionRequest(PlatformWebViewPermissionRequest request) {
     WebViewPermissionResourceType.microphone,
   };
 
-  if (request.types.isNotEmpty && request.types.every(allowed.contains)) {
-    request.grant();
-  } else {
+  if (request.types.isEmpty || !request.types.every(allowed.contains)) {
     request.deny();
+    return;
   }
+  _grantOnceTheOsAllows(request);
+}
+
+/// The page's permission is only as good as the app's own. iOS asks the
+/// user for the app's camera on the page's behalf the moment it is opened;
+/// Android WebView does not — it takes `grant()` at its word and then fails
+/// to open a camera the OS never gave the app, which reaches the page as a
+/// `NotReadableError` and the user as "Could not start the camera". So on
+/// Android the app's permission is asked for first, and the page gets its
+/// answer only once the OS has given one.
+Future<void> _grantOnceTheOsAllows(
+  PlatformWebViewPermissionRequest request,
+) async {
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    final needed = <Permission>[
+      if (request.types.contains(WebViewPermissionResourceType.camera))
+        Permission.camera,
+      if (request.types.contains(WebViewPermissionResourceType.microphone))
+        Permission.microphone,
+    ];
+    final statuses = await needed.request();
+    final refused = statuses.entries.where((e) => !e.value.isGranted);
+    if (refused.isNotEmpty) {
+      debugPrint(
+        '[web] permission refused by the OS: '
+        '${refused.map((e) => '${e.key} ${e.value}').join(', ')}',
+      );
+      request.deny();
+      return;
+    }
+  }
+  request.grant();
 }
 
 /// The stage-palette twin of `ErrorView`, which is built for the app's light
