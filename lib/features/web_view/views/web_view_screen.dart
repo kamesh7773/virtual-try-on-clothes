@@ -28,6 +28,7 @@ import '../view_models/product_try_on_view_model.dart';
 import '../view_models/url_history_view_model.dart';
 import 'widgets/try_on_overlay.dart';
 import 'widgets/try_on_preview.dart';
+import 'widgets/web_file_chooser.dart';
 import 'widgets/web_overlay_button.dart';
 import 'widgets/web_loading_cover.dart';
 
@@ -181,6 +182,7 @@ class WebViewScreen extends HookConsumerWidget {
         // The element outlives every rebuild, so this stays a valid check
         // for as long as the controller it is handed to does.
         isMounted: () => context.mounted,
+        onShowFileSelector: (params) => pickFilesForPage(context, params),
       ),
       [destination.url],
     );
@@ -439,6 +441,10 @@ WebViewController _createController({
   onVisitStarted,
   required void Function(String? title) onVisitFinished,
   required void Function(String message) onVisitFailed,
+  // Android only: what a page's `<input type="file">` gets back. WKWebView
+  // shows its own picker.
+  required Future<List<String>> Function(FileSelectorParams params)
+  onShowFileSelector,
 }) {
   // Assigned on the next line; the delegate's callbacks only run long after.
   late final WebViewController controller;
@@ -684,6 +690,8 @@ WebViewController _createController({
     // Android blocks autoplay until the user taps; a camera preview never
     // gets that tap.
     platform.setMediaPlaybackRequiresUserGesture(false);
+    // Without a handler Android WebView ignores an upload button outright.
+    platform.setOnShowFileSelector(onShowFileSelector);
   }
   if (platform is AndroidWebViewController ||
       platform is WebKitWebViewController) {

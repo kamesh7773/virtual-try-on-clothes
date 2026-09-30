@@ -50,6 +50,8 @@ dependencies:
   # `depend_on_referenced_packages`.
   webview_flutter_android: ^4.14.1
   webview_flutter_wkwebview: ^3.26.1
+  image_picker: ^1.2.3
+  file_picker: ^13.1.0
 
 dev_dependencies:
   flutter_test:
