@@ -54,7 +54,7 @@ final class ProductTryOnViewModelProvider
 }
 
 String _$productTryOnViewModelHash() =>
-    r'e0509d60b206dcb5a69a25cd9bb5ef9c84ccc831';
+    r'2c794058a59e1150a58a4d4987456c6b8de4945f';
 
 /// The try-on offer shown over a product page, and the request behind it.
 ///

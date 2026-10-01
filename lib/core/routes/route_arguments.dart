@@ -15,7 +15,10 @@ import '../../features/web_view/models/web_destination.dart';
 class WebViewScreenArgs {
   final WebDestination destination;
 
-  const WebViewScreenArgs({required this.destination});
+  /// A page on [destination] to open in place of its home page.
+  final String? initialUrl;
+
+  const WebViewScreenArgs({required this.destination, this.initialUrl});
 }
 
 /// Which recorded visit the detail screen should show.

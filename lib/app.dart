@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:toastification/toastification.dart';
 
 import 'core/config/env.dart';
 import 'core/constants/app_constants.dart';
@@ -49,17 +48,15 @@ class VirtualTryOnApp extends ConsumerWidget {
           ],
           onGenerateRoute: RouteGenerator.generateRoute,
           builder: (context, child) {
-            final content = ToastificationWrapper(
-              child: AnnotatedRegion<SystemUiOverlayStyle>(
-                value: const SystemUiOverlayStyle(
-                  statusBarColor: Colors.transparent,
-                  statusBarIconBrightness: Brightness.dark,
-                  statusBarBrightness: Brightness.light,
-                  systemNavigationBarColor: Colors.white,
-                  systemNavigationBarIconBrightness: Brightness.dark,
-                ),
-                child: child ?? const SizedBox.shrink(),
+            final content = AnnotatedRegion<SystemUiOverlayStyle>(
+              value: const SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness: Brightness.dark,
+                statusBarBrightness: Brightness.light,
+                systemNavigationBarColor: Colors.white,
+                systemNavigationBarIconBrightness: Brightness.dark,
               ),
+              child: child ?? const SizedBox.shrink(),
             );
 
             if (Env.isProduction) return content;

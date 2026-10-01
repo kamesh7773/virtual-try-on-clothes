@@ -1,14 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Reaching Decart. Flutter injects this into debug/profile builds for its
-         own tooling, so leaving it out here breaks release builds only. -->
+    <!-- Reaching the styling service and the retailer. Flutter injects this
+         into debug/profile builds for its own tooling, so leaving it out here
+         breaks release builds only. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- The try-on stream is the camera. Without this line permission_handler
+    <!-- The body snapshot is the camera. Without this line permission_handler
          reports permanentlyDenied and never shows a dialog. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- The realtime SDK negotiates an audio track alongside video even though
-         nothing is recorded or sent. -->
+    <!-- A site opened in the in-app browser may ask for the microphone; the
+         browser can only grant what the app itself holds. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Requesting CAMERA makes Play assume the hardware is required; say so

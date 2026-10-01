@@ -59,9 +59,3 @@ android {
 flutter {
     source = "../.."
 }
-
-dependencies {
-    // Realtime try-on. Pulls LiveKit in transitively; the video renderer and
-    // Room types used by the platform view come from there.
-    implementation("com.github.DecartAI:decart-android:0.7.10")
-}

@@ -10,11 +10,14 @@ import 'package:virtual_try_on/features/web_view/view_models/history_flow_view_m
 import 'package:virtual_try_on/features/web_view/view_models/url_history_view_model.dart';
 
 import '../../support/stub_http_adapter.dart';
+import '../../support/test_env.dart';
 
 const String _mirror = 'https://mirror.maxaix.com/';
 const String _retailer = 'https://www.dickssportinggoods.com/f/mens-golf-polos';
 
 void main() {
+  setUpAll(loadTestEnv);
+
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late ProviderContainer container;

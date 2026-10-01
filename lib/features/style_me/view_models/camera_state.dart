@@ -29,10 +29,7 @@ class CameraState {
   /// Settings instead.
   bool get needsSettings => permission == CameraPermission.permanentlyDenied;
 
-  CameraState copyWith({
-    CameraPermission? permission,
-    bool? isRequesting,
-  }) =>
+  CameraState copyWith({CameraPermission? permission, bool? isRequesting}) =>
       CameraState(
         permission: permission ?? this.permission,
         isRequesting: isRequesting ?? this.isRequesting,

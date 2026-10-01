@@ -1,5 +1,6 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../../style_me/view_models/style_session_view_model.dart';
 import '../models/web_product.dart';
 import '../models/web_purchase_options.dart';
 import '../repositories/try_on_repository.dart';
@@ -125,10 +126,26 @@ class ProductTryOnViewModel extends _$ProductTryOnViewModel {
       clearError: true,
       clearResult: true,
     );
-    final response = await _repo.requestTryOn(product);
+    // The shopper's own photo, by id. Without one the service uses a slot
+    // shared by every device, and answers with whoever uploaded last.
+    final session = ref.read(styleSessionViewModelProvider.notifier);
+    var photoId = await session.photoId();
+    if (!ref.mounted) return;
+
+    var response = await _repo.requestTryOn(product, photoId: photoId);
 
     // The browser can be gone by the time the service answers.
     if (!ref.mounted) return;
+
+    // The id ran out while the shopper browsed. Upload again and ask once
+    // more; a second refusal is reported rather than chased.
+    if (photoId != null && response.error == TryOnRepository.photoExpired) {
+      session.markPhotoExpired(photoId);
+      photoId = await session.photoId();
+      if (!ref.mounted) return;
+      response = await _repo.requestTryOn(product, photoId: photoId);
+      if (!ref.mounted) return;
+    }
 
     if (response.isSuccess && response.data != null) {
       state = state.copyWith(isLoading: false, resultUrl: response.data!.url);
@@ -137,7 +154,9 @@ class ProductTryOnViewModel extends _$ProductTryOnViewModel {
 
     state = state.copyWith(
       isLoading: false,
-      error: response.error ?? 'Try-on failed',
+      error: response.error == TryOnRepository.photoExpired
+          ? 'Your photo has expired — take a new one to try this on.'
+          : response.error ?? 'Try-on failed',
     );
   }
 }

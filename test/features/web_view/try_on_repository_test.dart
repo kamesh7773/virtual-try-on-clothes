@@ -7,6 +7,7 @@ import 'package:virtual_try_on/features/web_view/models/web_product.dart';
 import 'package:virtual_try_on/features/web_view/repositories/try_on_repository.dart';
 
 import '../../support/stub_http_adapter.dart';
+import '../../support/test_env.dart';
 
 const _product = WebProduct(
   pageUrl: 'https://www.dickssportinggoods.com/p/walter-hagen-polo',
@@ -28,6 +29,8 @@ const _product = WebProduct(
 }
 
 void main() {
+  setUpAll(loadTestEnv);
+
   test(
     'posts the category and the downloaded shot to the try-on endpoint',
     () async {
@@ -105,16 +108,19 @@ void main() {
     expect(response.data!.url, 'https://mirror.maxaix.com/tryon/1');
   });
 
-  test('an answer without an image is a failure, not an empty success', () async {
-    final (repository, _) = _repository(
-      StubHttpAdapter(body: {'status': 'queued'}),
-    );
+  test(
+    'an answer without an image is a failure, not an empty success',
+    () async {
+      final (repository, _) = _repository(
+        StubHttpAdapter(body: {'status': 'queued'}),
+      );
 
-    final response = await repository.requestTryOn(_product);
+      final response = await repository.requestTryOn(_product);
 
-    expect(response.isSuccess, isFalse);
-    expect(response.error, contains('did not return an image'));
-  });
+      expect(response.isSuccess, isFalse);
+      expect(response.error, contains('did not return an image'));
+    },
+  );
 
   test('a shot the CDN refuses stops the request before it is sent', () async {
     final (repository, adapter) = _repository(

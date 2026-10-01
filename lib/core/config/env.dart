@@ -1,12 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-enum Environment {
-  development,
-  staging,
-  production,
-}
+enum Environment { development, staging, production }
 
+/// What the `.env.*` file the entry point names says: where the services
+/// are, and the per-flavor switches. Nothing secret lives here — the app's
+/// services take no token.
 class Env {
   static late Environment _environment;
   static Environment get environment => _environment;
@@ -15,19 +14,11 @@ class Env {
 
   static Future<void> init(Environment environment) async {
     _environment = environment;
-    String fileName;
-
-    switch (environment) {
-      case Environment.development:
-        fileName = '.env.development';
-        break;
-      case Environment.staging:
-        fileName = '.env.staging';
-        break;
-      case Environment.production:
-        fileName = '.env.production';
-        break;
-    }
+    final fileName = switch (environment) {
+      Environment.development => '.env.development',
+      Environment.staging => '.env.staging',
+      Environment.production => '.env.production',
+    };
 
     await dotenv.load(fileName: fileName);
     _logConfiguration(fileName);
@@ -37,16 +28,13 @@ class Env {
     if (kReleaseMode && !enableLogs) return;
 
     final flavor = _environment.name.toUpperCase();
-    final banner = '''
+    final banner =
+        '''
 ╔══════════════════════════════════════════════════════════╗
 ║  🚀 App launched — flavor: $flavor
 ╠══════════════════════════════════════════════════════════╣
 ║  env file        : $fileName
 ║  API_BASE_URL    : $apiBaseUrl
-║  API_VERSION     : $apiVersion
-║  MODEL           : $realtimeModel
-║  DECART_API_KEY  : ${hasDecartApiKey ? 'set' : 'not set'}
-║  TOKEN_ENDPOINT  : ${tokenEndpoint ?? 'not set'}
 ║  ENABLE_LOGS     : $enableLogs
 ║  ENABLE_ANALYTICS: $enableAnalytics
 ║  ENABLE_CRASH    : $enableCrashReporting
@@ -55,35 +43,17 @@ class Env {
     debugPrint(banner);
   }
 
-  static String get apiBaseUrl => dotenv.env['API_BASE_URL'] ?? '';
-  static String get apiWsBaseUrl => dotenv.env['API_WS_BASE_URL'] ?? '';
-  static String get apiVersion => dotenv.env['API_VERSION'] ?? 'v1';
-
-  /// Realtime model the try-on session connects with.
-  static String get realtimeModel =>
-      dotenv.env['DECART_REALTIME_MODEL'] ?? 'lucy-vton-latest';
-
-  /// Backend that mints ephemeral client tokens. When set, it is preferred
-  /// over [decartApiKey] — the app never handles the long-lived key.
-  static String? get tokenEndpoint {
-    final url = dotenv.env['TOKEN_ENDPOINT'];
-    return (url == null || url.isEmpty) ? null : url;
+  /// The host every endpoint in `ApiEndpoints` is on, with no trailing
+  /// slash. Throws rather than guesses when the file leaves it out: every
+  /// request would go to the wrong place, and the first one is the time to
+  /// find out.
+  static String get apiBaseUrl {
+    final url = dotenv.env['API_BASE_URL']?.trim();
+    if (url == null || url.isEmpty) {
+      throw StateError('API_BASE_URL is not set in the env file');
+    }
+    return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
-
-  static bool get hasTokenEndpoint => tokenEndpoint != null;
-
-  /// Build-time, long-lived Decart API key.
-  ///
-  /// Only populated in development/staging — it can mint client tokens, so
-  /// shipping it in a release binary would let anyone extract it. Release
-  /// builds leave it blank and go through [tokenEndpoint] instead. A
-  /// user-supplied key in `SecureStorageService` takes precedence over both.
-  static String? get decartApiKey {
-    final key = dotenv.env['DECART_API_KEY'];
-    return (key == null || key.isEmpty) ? null : key;
-  }
-
-  static bool get hasDecartApiKey => decartApiKey != null;
 
   static bool get enableLogs => dotenv.env['ENABLE_LOGS'] == 'true';
   static bool get enableAnalytics => dotenv.env['ENABLE_ANALYTICS'] == 'true';

@@ -11,11 +11,11 @@ import '../../web_view/view_models/url_history_view_model.dart';
 import '../../web_view/views/widgets/web_destination_menu.dart';
 import 'widgets/home_option_tile.dart';
 
-/// The app's front door: what Mirror can do, and what it has already done.
+/// The browser and its history, listed. Not where the app starts — that is
+/// the Style Me intro — but kept as a way into both for debugging.
 ///
-/// The two modes carry no state of their own — the camera, the catalog and
-/// the browser each start on the screen that needs them. The history does,
-/// so it is read here to show how much of it there is.
+/// The browser carries no state of its own; the history does, so it is read
+/// here to show how much of it there is.
 class HomeScreen extends HookConsumerWidget {
   const HomeScreen({super.key});
 
@@ -53,13 +53,6 @@ class HomeScreen extends HookConsumerWidget {
                 ),
               ),
               SizedBox(height: 40.h),
-              HomeOptionTile(
-                icon: Icons.camera_alt_outlined,
-                title: 'VIRTUAL TRY-ON',
-                subtitle: 'See a garment on you, live',
-                onTap: () => Navigator.of(context).pushNamed(Routes.tryOn),
-              ),
-              SizedBox(height: 14.h),
               HomeOptionTile(
                 icon: Icons.language_rounded,
                 title: 'WEB VIEW',

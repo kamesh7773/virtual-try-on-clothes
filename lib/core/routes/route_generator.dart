@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../features/home/views/home_screen.dart';
-import '../../features/try_on/views/try_on_screen.dart';
-import '../../features/web_view/models/web_destination.dart';
+import '../../features/style_me/views/apparel_screen.dart';
+import '../../features/style_me/views/explore_screen.dart';
+import '../../features/style_me/views/get_ready_screen.dart';
+import '../../features/style_me/views/look_previews_screen.dart';
+import '../../features/style_me/views/style_intro_screen.dart';
 import '../../features/web_view/views/url_history_screen.dart';
 import '../../features/web_view/views/url_visit_detail_screen.dart';
 import '../../features/web_view/views/web_view_screen.dart';
@@ -12,14 +15,12 @@ import 'routes.dart';
 class RouteGenerator {
   RouteGenerator._();
 
-  /// What the app opens on: the mirror, straight away.
+  /// What the app opens on: the Style Me intro.
   ///
-  /// There is no menu in front of it — the browser *is* the app — so the
-  /// first route is built with its destination already chosen rather than
-  /// left to `initialRoute`, which carries a name and no arguments.
+  /// The kiosk flow runs natively; only the retailer it leads to opens in
+  /// the browser.
   static const RouteSettings initialRoute = RouteSettings(
-    name: Routes.webView,
-    arguments: WebViewScreenArgs(destination: WebDestinations.mirror),
+    name: Routes.styleIntro,
   );
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
@@ -28,12 +29,6 @@ class RouteGenerator {
         return MaterialPageRoute(
           settings: settings,
           builder: (_) => const HomeScreen(),
-        );
-
-      case Routes.tryOn:
-        return MaterialPageRoute(
-          settings: settings,
-          builder: (_) => const TryOnScreen(),
         );
 
       case Routes.webView:
@@ -45,7 +40,10 @@ class RouteGenerator {
         }
         return MaterialPageRoute(
           settings: settings,
-          builder: (_) => WebViewScreen(destination: args.destination),
+          builder: (_) => WebViewScreen(
+            destination: args.destination,
+            initialUrl: args.initialUrl,
+          ),
         );
 
       case Routes.urlHistory:
@@ -62,6 +60,36 @@ class RouteGenerator {
         return MaterialPageRoute(
           settings: settings,
           builder: (_) => UrlVisitDetailScreen(visit: args.visit),
+        );
+
+      case Routes.styleIntro:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const StyleIntroScreen(),
+        );
+
+      case Routes.styleGetReady:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const GetReadyScreen(),
+        );
+
+      case Routes.styleExplore:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const ExploreScreen(),
+        );
+
+      case Routes.styleApparel:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const ApparelScreen(),
+        );
+
+      case Routes.stylePreviews:
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const LookPreviewsScreen(),
         );
 
       default:

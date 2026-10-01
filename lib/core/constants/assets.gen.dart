@@ -9,65 +9,10 @@
 // ignore_for_file: type=lint
 // ignore_for_file: deprecated_member_use,directives_ordering,implicit_dynamic_list_literal,unnecessary_import
 
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-
-class $AssetsDataGen {
-  const $AssetsDataGen();
-
-  /// File path: assets/data/catalog.json
-  String get catalog => 'packages/virtual_try_on/assets/data/catalog.json';
-
-  /// List of all assets
-  List<String> get values => [catalog];
-}
-
-class $AssetsGarmentsGen {
-  const $AssetsGarmentsGen();
-
-  /// File path: assets/garments/polo-brown-contrast.jpg
-  AssetGenImage get poloBrownContrast =>
-      const AssetGenImage('assets/garments/polo-brown-contrast.jpg');
-
-  /// File path: assets/garments/polo-cream-knit.jpg
-  AssetGenImage get poloCreamKnit =>
-      const AssetGenImage('assets/garments/polo-cream-knit.jpg');
-
-  /// File path: assets/garments/polo-green-textured.jpg
-  AssetGenImage get poloGreenTextured =>
-      const AssetGenImage('assets/garments/polo-green-textured.jpg');
-
-  /// File path: assets/garments/polo-sage-printed.jpg
-  AssetGenImage get poloSagePrinted =>
-      const AssetGenImage('assets/garments/polo-sage-printed.jpg');
-
-  /// File path: assets/garments/shirt-plaid-corduroy.jpg
-  AssetGenImage get shirtPlaidCorduroy =>
-      const AssetGenImage('assets/garments/shirt-plaid-corduroy.jpg');
-
-  /// File path: assets/garments/shirt-sky-blue.jpg
-  AssetGenImage get shirtSkyBlue =>
-      const AssetGenImage('assets/garments/shirt-sky-blue.jpg');
-
-  /// File path: assets/garments/tshirt-black-heavyweight.jpg
-  AssetGenImage get tshirtBlackHeavyweight =>
-      const AssetGenImage('assets/garments/tshirt-black-heavyweight.jpg');
-
-  /// File path: assets/garments/tshirt-white-basic.jpg
-  AssetGenImage get tshirtWhiteBasic =>
-      const AssetGenImage('assets/garments/tshirt-white-basic.jpg');
-
-  /// List of all assets
-  List<AssetGenImage> get values => [
-    poloBrownContrast,
-    poloCreamKnit,
-    poloGreenTextured,
-    poloSagePrinted,
-    shirtPlaidCorduroy,
-    shirtSkyBlue,
-    tshirtBlackHeavyweight,
-    tshirtWhiteBasic,
-  ];
-}
+import 'package:flutter_svg/flutter_svg.dart' as _svg;
+import 'package:vector_graphics/vector_graphics.dart' as _vg;
 
 class $AssetsIconsGen {
   const $AssetsIconsGen();
@@ -83,14 +28,131 @@ class $AssetsIconsGen {
   List<AssetGenImage> get values => [appLogo, appSplash];
 }
 
+class $AssetsStyleMeGen {
+  const $AssetsStyleMeGen();
+
+  /// File path: assets/style_me/apparel_accessories.webp
+  AssetGenImage get apparelAccessories =>
+      const AssetGenImage('assets/style_me/apparel_accessories.webp');
+
+  /// File path: assets/style_me/apparel_fanshop.webp
+  AssetGenImage get apparelFanshop =>
+      const AssetGenImage('assets/style_me/apparel_fanshop.webp');
+
+  /// File path: assets/style_me/apparel_mens.webp
+  AssetGenImage get apparelMens =>
+      const AssetGenImage('assets/style_me/apparel_mens.webp');
+
+  /// File path: assets/style_me/apparel_shoes.webp
+  AssetGenImage get apparelShoes =>
+      const AssetGenImage('assets/style_me/apparel_shoes.webp');
+
+  /// File path: assets/style_me/apparel_women.webp
+  AssetGenImage get apparelWomen =>
+      const AssetGenImage('assets/style_me/apparel_women.webp');
+
+  /// File path: assets/style_me/apparel_youth.webp
+  AssetGenImage get apparelYouth =>
+      const AssetGenImage('assets/style_me/apparel_youth.webp');
+
+  /// File path: assets/style_me/dicks_logo.svg
+  SvgGenImage get dicksLogo =>
+      const SvgGenImage('assets/style_me/dicks_logo.svg');
+
+  /// File path: assets/style_me/explore_apparel.webp
+  AssetGenImage get exploreApparel =>
+      const AssetGenImage('assets/style_me/explore_apparel.webp');
+
+  /// File path: assets/style_me/explore_equipment.webp
+  AssetGenImage get exploreEquipment =>
+      const AssetGenImage('assets/style_me/explore_equipment.webp');
+
+  /// File path: assets/style_me/explore_fan_shop.webp
+  AssetGenImage get exploreFanShop =>
+      const AssetGenImage('assets/style_me/explore_fan_shop.webp');
+
+  /// File path: assets/style_me/explore_footwear.webp
+  AssetGenImage get exploreFootwear =>
+      const AssetGenImage('assets/style_me/explore_footwear.webp');
+
+  /// File path: assets/style_me/explore_outdoors.webp
+  AssetGenImage get exploreOutdoors =>
+      const AssetGenImage('assets/style_me/explore_outdoors.webp');
+
+  /// File path: assets/style_me/feature_outfits.svg
+  SvgGenImage get featureOutfits =>
+      const SvgGenImage('assets/style_me/feature_outfits.svg');
+
+  /// File path: assets/style_me/feature_store.svg
+  SvgGenImage get featureStore =>
+      const SvgGenImage('assets/style_me/feature_store.svg');
+
+  /// File path: assets/style_me/feature_styling.svg
+  SvgGenImage get featureStyling =>
+      const SvgGenImage('assets/style_me/feature_styling.svg');
+
+  /// File path: assets/style_me/intro_poster.webp
+  AssetGenImage get introPoster =>
+      const AssetGenImage('assets/style_me/intro_poster.webp');
+
+  /// File path: assets/style_me/intro_video.mp4
+  String get introVideo =>
+      'packages/virtual_try_on/assets/style_me/intro_video.mp4';
+
+  /// File path: assets/style_me/look_athletics.webp
+  AssetGenImage get lookAthletics =>
+      const AssetGenImage('assets/style_me/look_athletics.webp');
+
+  /// File path: assets/style_me/look_golf.webp
+  AssetGenImage get lookGolf =>
+      const AssetGenImage('assets/style_me/look_golf.webp');
+
+  /// File path: assets/style_me/look_sports.webp
+  AssetGenImage get lookSports =>
+      const AssetGenImage('assets/style_me/look_sports.webp');
+
+  /// File path: assets/style_me/look_workout.webp
+  AssetGenImage get lookWorkout =>
+      const AssetGenImage('assets/style_me/look_workout.webp');
+
+  /// File path: assets/style_me/stage_backdrop.webp
+  AssetGenImage get stageBackdrop =>
+      const AssetGenImage('assets/style_me/stage_backdrop.webp');
+
+  /// List of all assets
+  List<dynamic> get values => [
+    apparelAccessories,
+    apparelFanshop,
+    apparelMens,
+    apparelShoes,
+    apparelWomen,
+    apparelYouth,
+    dicksLogo,
+    exploreApparel,
+    exploreEquipment,
+    exploreFanShop,
+    exploreFootwear,
+    exploreOutdoors,
+    featureOutfits,
+    featureStore,
+    featureStyling,
+    introPoster,
+    introVideo,
+    lookAthletics,
+    lookGolf,
+    lookSports,
+    lookWorkout,
+    stageBackdrop,
+  ];
+}
+
 class AppAssets {
   const AppAssets._();
 
   static const String package = 'virtual_try_on';
 
-  static const $AssetsDataGen data = $AssetsDataGen();
-  static const $AssetsGarmentsGen garments = $AssetsGarmentsGen();
   static const $AssetsIconsGen icons = $AssetsIconsGen();
+  static const $AssetsStyleMeGen styleMe = $AssetsStyleMeGen();
 }
 
 class AssetGenImage {
@@ -186,4 +248,81 @@ class AssetGenImageAnimation {
   final bool isAnimation;
   final Duration duration;
   final int frames;
+}
+
+class SvgGenImage {
+  const SvgGenImage(this._assetName, {this.size, this.flavors = const {}})
+    : _isVecFormat = false;
+
+  const SvgGenImage.vec(this._assetName, {this.size, this.flavors = const {}})
+    : _isVecFormat = true;
+
+  final String _assetName;
+  final Size? size;
+  final Set<String> flavors;
+  final bool _isVecFormat;
+
+  static const String package = 'virtual_try_on';
+
+  _svg.SvgPicture svg({
+    Key? key,
+    bool matchTextDirection = false,
+    AssetBundle? bundle,
+    @Deprecated('Do not specify package for a generated library asset')
+    String? package = package,
+    double? width,
+    double? height,
+    BoxFit fit = BoxFit.contain,
+    AlignmentGeometry alignment = Alignment.center,
+    bool allowDrawingOutsideViewBox = false,
+    WidgetBuilder? placeholderBuilder,
+    String? semanticsLabel,
+    bool excludeFromSemantics = false,
+    _svg.SvgTheme? theme,
+    _svg.ColorMapper? colorMapper,
+    ColorFilter? colorFilter,
+    Clip clipBehavior = Clip.hardEdge,
+    @deprecated Color? color,
+    @deprecated BlendMode colorBlendMode = BlendMode.srcIn,
+    @deprecated bool cacheColorFilter = false,
+  }) {
+    final _svg.BytesLoader loader;
+    if (_isVecFormat) {
+      loader = _vg.AssetBytesLoader(
+        _assetName,
+        assetBundle: bundle,
+        packageName: package,
+      );
+    } else {
+      loader = _svg.SvgAssetLoader(
+        _assetName,
+        assetBundle: bundle,
+        packageName: package,
+        theme: theme,
+        colorMapper: colorMapper,
+      );
+    }
+    return _svg.SvgPicture(
+      loader,
+      key: key,
+      matchTextDirection: matchTextDirection,
+      width: width,
+      height: height,
+      fit: fit,
+      alignment: alignment,
+      allowDrawingOutsideViewBox: allowDrawingOutsideViewBox,
+      placeholderBuilder: placeholderBuilder,
+      semanticsLabel: semanticsLabel,
+      excludeFromSemantics: excludeFromSemantics,
+      colorFilter:
+          colorFilter ??
+          (color == null ? null : ColorFilter.mode(color, colorBlendMode)),
+      clipBehavior: clipBehavior,
+      cacheColorFilter: cacheColorFilter,
+    );
+  }
+
+  String get path => _assetName;
+
+  String get keyName => 'packages/virtual_try_on/$_assetName';
 }

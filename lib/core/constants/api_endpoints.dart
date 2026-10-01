@@ -1,40 +1,40 @@
 import '../config/env.dart';
 
+/// Every service the app talks to. All on [Env.apiBaseUrl], all full URLs
+/// — the Dio client has no base URL, since the repositories also fetch from
+/// retailers' image CDNs through it — and none of them takes a token.
 class ApiEndpoints {
   ApiEndpoints._();
 
-  /// Decart REST base URL — `https://api.decart.ai` (set per flavor).
-  static String get baseUrl => Env.apiBaseUrl;
+  static String _url(String path) => '${Env.apiBaseUrl}$path';
 
-  /// Decart signalling base URL — `wss://api.decart.ai`. The native SDKs take
-  /// this directly; nothing in Dart opens this socket itself.
-  static String get wsBaseUrl => Env.apiWsBaseUrl;
-
-  /// POST — mints a short-lived client token. Authenticated with the
-  /// long-lived key via the `x-api-key` header, and returns
-  /// `{ apiKey, token, expiresAt, permissions, constraints }`.
+  /// Try-on service the in-app browser posts products to.
   ///
-  /// Decart rejects this call when authenticated with a client token
-  /// (403), so it can only be made from a trusted context: a dev build
-  /// holding the real key, or the backend named by [Env.tokenEndpoint].
-  static const String createClientToken = '/v1/client/tokens';
+  /// POST, `multipart/form-data` — `image` (the product shot as a file),
+  /// `category` (one of the four; the scene only) and `photo_id` (the
+  /// shopper's upload from [stylePhoto]). Answers `{ image, url }`, or
+  /// `404 photo_expired` when the id is gone.
+  static String get tryOn => _url('/api/tryon');
 
-  /// Header carrying the long-lived Decart API key.
-  static const String apiKeyHeader = 'x-api-key';
+  // The Style Me app API, documented in `docs/app-api.md`.
 
-  /// Try-on service the in-app browser posts products to. A full URL, not a
-  /// path: it is a different host from Decart's, the same one in every
-  /// flavor.
+  /// Uploads the shopper's snapshot once, for a `photo_id` good for six
+  /// hours. POST, `multipart/form-data` — `photo` (the file). Answers
+  /// `{ photo_id, expires_at, expires_in, ... }`.
   ///
-  /// POST, `multipart/form-data` — `category` (one of the four the service
-  /// accepts) and `image` (the product shot as a file). Takes no token, and
-  /// answers with the URL of the page to open.
-  static const String tryOn = 'https://mirror.maxaix.com/api/tryon';
+  /// Also the base of `GET`/`DELETE /{photo_id}`.
+  static String get stylePhoto => _url('/api/app/photo');
 
-  /// Where a finished browsing flow is reported. A full URL for the same
-  /// reason as [tryOn], and takes no token either.
+  /// Styles the uploaded photo into one look.
+  ///
+  /// POST, `application/json` — `{ photo_id, category, variant, dept }`.
+  /// Answers `{ image, shop_url, cached, test, ... }`. Slow: a fresh look
+  /// takes 12–50s, and the server gives its provider 150s.
+  static String get styleLook => _url('/api/app/generate');
+
+  /// Where a finished browsing flow is reported.
   ///
   /// POST, `application/json` — the envelope documented in
   /// `docs/url-history-payload.md`, carrying the visits of one flow.
-  static const String history = 'https://mirror.maxaix.com/api/history';
+  static String get history => _url('/api/history');
 }

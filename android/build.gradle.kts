@@ -2,8 +2,6 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        // The Decart Android SDK is published through JitPack, not Maven Central.
-        maven { url = uri("https://jitpack.io") }
     }
 }
 

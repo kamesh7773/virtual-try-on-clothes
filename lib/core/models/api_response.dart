@@ -25,11 +25,8 @@ class ApiResponse<T> {
         statusCode: statusCode,
       );
 
-  factory ApiResponse.failure(String error, {int? statusCode}) => ApiResponse(
-        isSuccess: false,
-        error: error,
-        statusCode: statusCode,
-      );
+  factory ApiResponse.failure(String error, {int? statusCode}) =>
+      ApiResponse(isSuccess: false, error: error, statusCode: statusCode);
 
   @override
   String toString() =>

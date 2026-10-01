@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:permission_handler_platform_interface/permission_handler_platform_interface.dart';
-import 'package:virtual_try_on/features/try_on/view_models/camera_state.dart';
-import 'package:virtual_try_on/features/try_on/view_models/camera_view_model.dart';
+import 'package:virtual_try_on/features/style_me/view_models/camera_state.dart';
+import 'package:virtual_try_on/features/style_me/view_models/camera_view_model.dart';
 
 /// Stands in for the platform channel so permission outcomes can be scripted.
 class _FakePermissionHandler extends PermissionHandlerPlatform {
@@ -37,8 +37,7 @@ class _FakePermissionHandler extends PermissionHandlerPlatform {
   @override
   Future<bool> shouldShowRequestPermissionRationale(
     Permission permission,
-  ) async =>
-      false;
+  ) async => false;
 }
 
 void main() {
@@ -92,15 +91,17 @@ void main() {
     expect(state().needsSettings, isFalse);
   });
 
-  test('a permanent denial routes to Settings instead of re-prompting',
-      () async {
-    handler.requestResult = PermissionStatus.permanentlyDenied;
+  test(
+    'a permanent denial routes to Settings instead of re-prompting',
+    () async {
+      handler.requestResult = PermissionStatus.permanentlyDenied;
 
-    await viewModel().request();
+      await viewModel().request();
 
-    expect(state().permission, CameraPermission.permanentlyDenied);
-    expect(state().needsSettings, isTrue);
-  });
+      expect(state().permission, CameraPermission.permanentlyDenied);
+      expect(state().needsSettings, isTrue);
+    },
+  );
 
   test('restricted is treated as needing Settings', () async {
     handler.statusToReturn = PermissionStatus.restricted;

@@ -9,6 +9,7 @@ import 'package:virtual_try_on/features/web_view/view_models/product_try_on_stat
 import 'package:virtual_try_on/features/web_view/view_models/product_try_on_view_model.dart';
 
 import '../../support/stub_http_adapter.dart';
+import '../../support/test_env.dart';
 
 const _product = WebProduct(
   pageUrl: 'https://www.dickssportinggoods.com/p/walter-hagen-polo',
@@ -33,6 +34,8 @@ const _product = WebProduct(
 }
 
 void main() {
+  setUpAll(loadTestEnv);
+
   test('no product until the page reports one', () {
     final (container, _) = _container(
       StubHttpAdapter(body: {'url': 'https://mirror.maxaix.com/tryon/1'}),

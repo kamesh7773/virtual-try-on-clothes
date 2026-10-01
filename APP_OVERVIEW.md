@@ -1,109 +1,74 @@
 # Mirror (virtual_try_on): App Overview
 
-One place that explains what this app is, how it works, what the client has asked for so far, and what could come next.
-Last reviewed: 2026-09-24, branch `development`, commit `3a8c13e`. All 190 tests pass.
+One place that explains what this app is, how it works, what has been asked for so far, and what could come next.
+Last reviewed: 2026-10-01, branch `development`. All 234 tests pass.
 
-> **Naming.** The same app goes by three names. **Mirror** is the current brand (app name, launcher label, wordmark). **LiveLook** is the older name, still used in the README title, the bundle ID `com.livelook.app` and the channel names (`livelook/decart`, `LiveLookBridge`). **virtual_try_on** is the package and folder name.
+> **Naming.** **Mirror** is the brand (app name, launcher label, wordmark). **LiveLook** is the older name, still used in the bundle ID `com.livelook.app` and the browser bridge's channel name (`LiveLookBridge`). **virtual_try_on** is the package and folder name.
 
 ---
 
 ## 1. What the app is
 
-**Mirror** is a Flutter app for iOS and Android, built by Maxaix, that lets a shopper **see sports apparel on themselves before they buy it**. It is built around DICK'S Sporting Goods.
+**Mirror** is a Flutter app for iOS and Android, built by Maxaix, that lets a shopper **see sports apparel styled on themselves before they buy it**. It is built around DICK'S Sporting Goods.
 
-The app contains two try-on engines, but only one of them is in use right now:
+The app is a native kiosk flow (**Style Me**): one photo, four AI-styled looks, and a tap through to the matching shelf on dickssportinggoods.com. **Only the retailer opens in a web view.** Every other screen is Flutter, for performance.
 
-| Engine | What it does | Status |
-|---|---|---|
-| **Web mirror + product try-on** (current) | The app is an in-app browser that opens `https://mirror.maxaix.com/`. From there the shopper goes to a retailer (DICK'S). On any product page the app offers **"Try on"**. It sends the product photo to `mirror.maxaix.com/api/tryon`, shows the resulting image, and can then **add the product to the retailer's cart** for the shopper. | **Live. This is what the app opens on.** |
-| **Live camera try-on (Decart)** (earlier) | Front camera plus Decart's realtime `lucy-vton` model. The live video shows you wearing the garment you pick from a strip of 8 bundled garments. | Built and verified on real iPhone and Android devices, but **no button leads to it**. |
-
-The whole app is the browser. It starts on the mirror site with no app bar, address bar or menu. The home screen, the Decart live try-on and the History screen still exist and are routed, but the UI never opens them (see [§3](#3-screens-and-whats-reachable)).
+Until 2026-10-01 the same flow ran as a web page (`mirror.maxaix.com`) inside the app's browser, and before that the app had a live-camera try-on engine (Decart). Both are gone: the flow was ported to Flutter screens, and the live engine, its native SDKs, its API key and its garment catalog were removed.
 
 ---
 
-## 2. The user journey (what actually happens)
+## 2. The user journey
 
-1. **Launch.** A native splash screen, then the in-app browser opens `https://mirror.maxaix.com/` full-screen (edge to edge, because the mirror site handles the notch itself). A **loading cover** (Mirror wordmark, "ONE MOMENT", a sliding bar) hides the blank web view until the page first draws something.
-2. **On the mirror site.** The site has four apparel cards: **golf, athletics, workout, sports**. Tapping one ("GET THIS STYLE") does not navigate. Instead the site posts `{"category","url"}` to a JavaScript channel named **`ShopLink`**, and the app opens that retailer URL as a full page.
-3. **On the retailer (DICK'S).** The page scrolls and taps like a normal browser. A floating **Back** button appears once you are off the mirror's own site, because the iOS swipe would otherwise leave the whole screen.
-4. **On a product page.** The app reads the product (name, image, brand, price) from the page's JSON-LD `Product` data or its OpenGraph tags. A **"Try on" pill** appears at the bottom and shows which of the four categories the product will be sent as.
-5. **Tap "Try on".** The app downloads the product photo from the retailer and POSTs it as multipart (`category` + `image`) to `https://mirror.maxaix.com/api/tryon`. The service answers with an **image**, which is shown over the page in a zoomable **TryOnPreview**. Close it with the ✕ or a back gesture and you are back on the same product page.
-6. **Tap "CHECKOUT" in the preview.** The app reads the page's attribute rows (Color, Size, Inseam, Width…) and asks the shopper for any value the page hasn't settled, one row at a time, in the page's order. It then presses the site's own **Add To Cart** button. If the add succeeds it opens the cart page. If it fails, it shows the site's own reason, such as "Please Select Size". If the page's controls can't be read, it closes the preview and says: *"Choose your options on the page, then tap Add To Cart."*
-7. **In the background.** Every page load is saved to a **local history** along with what was tapped to get there. When a "flow" (mirror → retailer → …) ends, meaning the user returns to the mirror or the app goes to the background, the flow is **POSTed to `mirror.maxaix.com/api/history`**.
+1. **Launch.** Native splash, then the **intro**: a looping model video, the DICK'S logo, and a STYLE ME button. Tapping it clears whatever the last shopper left.
+2. **Get Ready.** The app asks for the camera and shows the front camera inside a framing guide ("STEP BACK · FULL BODY IN FRAME", "LOOK HERE · STAND NATURALLY"). The shopper picks **MEN'S or WOMEN'S** and taps **TAKE MY PHOTO**, or picks a photo from the library instead. If the camera is blocked there is an OPEN SETTINGS button, and the picker still works.
+3. **Upload.** The photo is straightened, shrunk to 1440 px and uploaded once (`POST /api/app/photo`) for a `photo_id` that lives six hours. **Nothing is styled yet.**
+4. **Explore → Apparel.** Five departments, then the apparel shelves (Men's or Women's Apparel, Youth Apparel, Shoes, Accessories, Fan Shop). Each choice only sets who the looks are for and which shelf. Youth Apparel styles boys for a men's shopper and girls for a women's; every other row styles the shopper.
+5. **Previews.** Opening this screen asks the styling service for **four looks at once** (golf, athletics, workout, sports) for that shopper and shelf. Each card shows a scanning animation until its look arrives (12–50 s), then GET THIS STYLE. The looks keep arriving if the shopper goes back a screen.
+6. **The shelf.** Tapping a look opens the `shop_url` the service named for it, in the in-app browser, with a Back control from the first page. The shopper browses DICK'S like a normal site. **Only Men's / Women's Apparel, Youth Apparel and Shoes open DICK'S.** Under Accessories, Fan Shop and the other explore departments the looks are shown without GET THIS STYLE and a tap opens nothing. On a product page the browser still offers its own **product try-on** and **checkout** (see §4.2).
+7. **In the background.** Every page the browser opens is saved to a local history with what was tapped to get there. When a journey ends it is reported to `mirror.maxaix.com/api/history`.
 
 ---
 
-## 3. Screens and what's reachable
+## 3. Screens and routes
 
-Routes live in [routes.dart](lib/core/routes/routes.dart) and [route_generator.dart](lib/core/routes/route_generator.dart). The initial route is hard-wired to the web view on the mirror.
+Routes live in [routes.dart](lib/core/routes/routes.dart) and [route_generator.dart](lib/core/routes/route_generator.dart). The initial route is `Routes.styleIntro`.
 
-| Route | Screen | Reachable from UI? | What it is |
+| Route | Screen | On a shopper's path? | What it is |
 |---|---|---|---|
-| `/web-view` | [WebViewScreen](lib/features/web_view/views/web_view_screen.dart) | ✅ Start screen | The in-app browser: loading cover, back button, try-on pill, try-on preview, checkout. |
-| `/` | [HomeScreen](lib/features/home/views/home_screen.dart) | ❌ | "CHOOSE A MODE": Virtual Try-On / Web View (destination sheet: Mirror, DICK'S) / History. |
-| `/try-on` | [TryOnScreen](lib/features/try_on/views/try_on_screen.dart) | ❌ (only from Home) | Decart live camera try-on: permission gate, video, garment strip, start/end session. |
-| `/url-history` | [UrlHistoryScreen](lib/features/web_view/views/url_history_screen.dart) | ❌ (only from Home) | Every page the browser opened, newest first. |
-| `/url-visit` | [UrlVisitDetailScreen](lib/features/web_view/views/url_visit_detail_screen.dart) | ❌ (from History) | One visit: the tap, timings, URL broken into path and query, "OPEN AGAIN", copy URL. |
-
-To reach the hidden screens again, change `RouteGenerator.initialRoute` back to `Routes.home`, or add an entry point such as a hidden gesture or a debug-only button.
+| `/style` | [StyleIntroScreen](lib/features/style_me/views/style_intro_screen.dart) | ✅ Start | Video, logo, STYLE ME. Resets the session. |
+| `/style/get-ready` | [GetReadyScreen](lib/features/style_me/views/get_ready_screen.dart) | ✅ | Camera permission, preview, MEN'S / WOMEN'S, capture, picker, privacy card. |
+| `/style/explore` | [ExploreScreen](lib/features/style_me/views/explore_screen.dart) | ✅ | Five departments. |
+| `/style/apparel` | [ApparelScreen](lib/features/style_me/views/apparel_screen.dart) | ✅ | The shelves. The other adult's row is hidden. |
+| `/style/previews` | [LookPreviewsScreen](lib/features/style_me/views/look_previews_screen.dart) | ✅ | The four looks. Opening it generates them. |
+| `/web-view` | [WebViewScreen](lib/features/web_view/views/web_view_screen.dart) | ✅ From a look | The retailer, with `initialUrl` set to the shelf. |
+| `/` | [HomeScreen](lib/features/home/views/home_screen.dart) | ❌ | Browser destinations and History, for debugging. |
+| `/url-history`, `/url-visit` | History screens | ❌ From Home | Every page opened; one visit in full. |
 
 ---
 
 ## 4. How it works under the hood
 
-### 4.1 In-app browser ([web_view_screen.dart](lib/features/web_view/views/web_view_screen.dart), ~2,350 lines)
+### 4.1 Style Me ([lib/features/style_me/](lib/features/style_me/))
 
-- **Destinations** ([web_destination.dart](lib/features/web_view/models/web_destination.dart)):
-  - `mirror`: `https://mirror.maxaix.com/`, `promotesFramedLinks: true`, `handlesOwnInsets: true`
-  - `dicks_sporting_goods`: `https://www.dickssportinggoods.com/`, with a known `cartUrl` (`OrderItemDisplay?storeId=15108&catalogId=12301&langId=-1`)
-- **Injected bridge script.** A large JavaScript string is injected into every page. It posts messages to the `LiveLookBridge` channel, and [web_bridge_message.dart](lib/features/web_view/models/web_bridge_message.dart) parses them. Parsing is strict, because any script on the page can post to the channel. Message types:
-  - `tap`: what the user tapped (label, heading, source page), used by history
-  - `product`: the product found on the page, or null
-  - `options`: attribute groups, add-to-cart availability, cart link
-  - `checkout`: `added` / `failed` / `timeout`, plus a reason
-  - `painted`: first contentful paint, which lifts the loading cover
-- **`ShopLink` channel.** Posted by the mirror site itself. It is accepted only while the browser is on the mirror's host.
-- **Navigation rules** ([web_navigation_decision.dart](lib/features/web_view/models/web_navigation_decision.dart)):
-  - `tel:`, `mailto:` and `intent://` are blocked.
-  - On the mirror, a link that opens in an iframe to another host is lifted out and opened as a real page.
-- **Loading cover.** It lifts on the first paint rather than on `onPageFinished`, because retail pages can take 10–20 s to fire `load`. It has a hard limit of 10 s. Load failures ignore cancellations (`NSURLErrorCancelled`, `net::ERR_ABORTED`) so that going back doesn't show a false error.
-- **Camera and mic for the page.** The mirror site can ask for camera and microphone. On Android the app asks the OS for permission first, then grants it to the page. Any other permission request (location, MIDI…) is denied.
-- **Back handling.** A back gesture first closes an open picker, then the try-on preview, then goes back one page in the browser. On the first page it closes the app.
+- **Session** ([style_session_view_model.dart](lib/features/style_me/view_models/style_session_view_model.dart), kept alive across screens): the photo, its `UploadedPhoto` (id + expiry), `adult` (the MEN'S / WOMEN'S switch), `variant` and `dept` (what the looks are for), the heading, and the four `LookPreview`s with the request they were made for.
+- **Lazy generation.** `showLooks()` is called only by the previews screen as it opens. Same shopper and shelf again → nothing is asked; a shelf that changed → all four afresh; a look that failed → that one again. The upload is shared: four looks wait on the one in flight.
+- **Retries.** Three tries per look, 2 s then 5 s apart. A `generation_failed` is retried; a validation error is not. A `404 photo_expired` clears the id, uploads the photo again once, and continues. Results that come back after a reset or a new photo are dropped (a generation counter).
+- **Links.** The service sends `shop_url` with each look and that wins. [style_catalog.dart](lib/features/style_me/models/style_catalog.dart) keeps the full table the web mirror used (per category × variant × dept) for a look that failed; a test pins all 32 links to what the site sent.
+- **Camera.** [camera_view_model.dart](lib/features/style_me/view_models/camera_view_model.dart) is the permission gate; the screen owns the `camera` plugin controller and releases it before the next screen opens and while the app is in the background.
+- **Photo.** [style_photo.dart](lib/features/style_me/models/style_photo.dart) bakes the EXIF rotation into the pixels and shrinks to 1440 px off the UI isolate.
 
-### 4.2 Product try-on ([try_on_repository.dart](lib/features/web_view/repositories/try_on_repository.dart))
+### 4.2 In-app browser ([web_view_screen.dart](lib/features/web_view/views/web_view_screen.dart))
 
-- **Category.** [try_on_category.dart](lib/features/web_view/models/try_on_category.dart) matches keywords against the product title first, then the URL path. The order is golf → sports → workout → athletics. Anything that doesn't match falls back to `sports`.
-- **Image upload.** The product image is downloaded (up to 12 MB) and sent as a file rather than a link, because retailer CDNs often block other servers from fetching it.
-- **Redirects.** They are followed manually and the form is re-POSTed each time, so a redirect doesn't turn the request into a GET.
-- **Response parsing.** The response is read flexibly: `image`, `url`, `tryOnUrl`, `resultUrl`, … or a nested `data` object. A relative path is resolved against `mirror.maxaix.com`.
-- **What is sent.** The request carries **only the product photo and a category**. No photo of the user is sent. Whoever appears in the result image is decided by the backend.
+- **Destinations** ([web_destination.dart](lib/features/web_view/models/web_destination.dart)): `dicks_sporting_goods` with a known `cartUrl`; `mirror` is still defined for the destination sheet on the debug home screen.
+- **Injected bridge.** A script injected into every page posts `tap`, `product`, `options`, `checkout` and `painted` messages to the `LiveLookBridge` channel; [web_bridge_message.dart](lib/features/web_view/models/web_bridge_message.dart) parses them strictly.
+- **Product try-on** ([try_on_repository.dart](lib/features/web_view/repositories/try_on_repository.dart)): on a product page, the product shot is posted to `mirror.maxaix.com/api/tryon` with a category and the result is shown over the page.
+- **Checkout**: the page's attribute rows are read, missing ones are asked for, and the site's own Add To Cart is pressed; success is read from the site's log line.
+- **Back.** A back gesture closes a picker, then the preview, then walks the page history. Opened from a look (`initialUrl` set), the floating Back control shows from the first page and pops the screen once the page history is exhausted.
+- **Permissions for the page.** Camera and microphone requests from a site are passed through after the OS grants them; anything else is denied.
 
-### 4.3 Checkout from the preview
+### 4.3 History and flow reporting
 
-- **Reading the options.** [web_purchase_options.dart](lib/features/web_view/models/web_purchase_options.dart) turns whatever headed attribute rows the page has into a list of `WebOptionGroup`s. Different products have different rows: a polo has Color + Size, golf pants add Inseam, shoes are expected to have Width (not yet tested).
-- **What's already decided.** A value the page already shows as selected is used as-is. For color, the `?color=` in the URL is also used, because DICK'S does not preselect the swatch from the URL.
-- **Pressing buttons.** The script uses a full pointer/mouse/click event sequence, because a bare `click()` doesn't register on DICK'S buttons. Success is detected from the site's own `"callOrigin":"main button","success":"true"` log line.
-- **Plans.** [product_try_on_view_model.dart](lib/features/web_view/view_models/product_try_on_view_model.dart) decides between three:
-  - `pick`: ask the shopper for the next missing option
-  - `add`: every option is settled, so press Add To Cart
-  - `guide`: the page's controls can't be read, so hand the shopper back to the page
-- **Timeouts.** The script gives up after about 30 s. The app gives up after 40 s.
-
-### 4.4 History and flow reporting
-
-- **Local history.** [url_history_repository.dart](lib/features/web_view/repositories/url_history_repository.dart) stores visits in `shared_preferences`. Each visit records the URL, when it opened, the page title, the load time, any error, the trigger (`direct` / `link` / `element` / `frame` / `viewer` / `inPage`), and what was tapped.
-- **Flow reporting.** [history_flow_view_model.dart](lib/features/web_view/view_models/history_flow_view_model.dart) tracks one journey. It reports only flows that reached a retailer. The payload is documented for the backend in [docs/url-history-payload.md](docs/url-history-payload.md).
-
-### 4.5 Decart live try-on (hidden but working)
-
-- **Why a native bridge.** Decart has no Dart SDK. The app wraps the native SDKs through platform channels:
-  - Swift: [ios/Runner/Decart/](ios/Runner/Decart/), `decart-ios` 0.6.10 plus LiveKit 2.16.0
-  - Kotlin: [android/.../decart/](android/app/src/main/kotlin/com/livelook/app/decart/), `decart-android` 0.7.10
-- **Channels.** The MethodChannel `livelook/decart` and the EventChannel `livelook/decart/events` carry commands and events. The video is rendered through the platform view `livelook/decart_video`.
-- **Session rules.** Sessions are capped at 60 s for billing, garment switches are debounced by 350 ms, and connecting times out after 45 s.
-- **Catalog.** 8 bundled garments are listed in [assets/data/catalog.json](assets/data/catalog.json). Their prompts follow the VTON 3.5 prompting guide.
-- **Device requirements.** iOS 17+ and a real device on both platforms. Simulators and emulators don't produce a stream.
+Unchanged: [url_history_repository.dart](lib/features/web_view/repositories/url_history_repository.dart) stores visits in `shared_preferences`; [history_flow_view_model.dart](lib/features/web_view/view_models/history_flow_view_model.dart) reports a journey that reached the retailer, judged against the mirror's host. Payload in [docs/url-history-payload.md](docs/url-history-payload.md).
 
 ---
 
@@ -111,33 +76,33 @@ To reach the hidden screens again, change `RouteGenerator.initialRoute` back to 
 
 | Endpoint | Method | Auth | Used for |
 |---|---|---|---|
-| `https://mirror.maxaix.com/` | page | none | The start page (mirror site) |
-| `https://mirror.maxaix.com/api/tryon` | POST multipart `category`, `image` | **none** | Product try-on image |
-| `https://mirror.maxaix.com/api/history` | POST JSON | **none** | Browsing-flow reports |
-| `https://api.decart.ai` + `wss://api.decart.ai` | SDK | `x-api-key` (Decart key) | Live camera try-on only |
+| `https://mirror.maxaix.com/api/app/photo` | POST multipart `photo`; DELETE `/{id}` | none | The snapshot, once |
+| `https://mirror.maxaix.com/api/app/generate` | POST JSON `photo_id`, `category`, `variant`, `dept` | none | One look per call |
+| `https://mirror.maxaix.com/api/tryon` | POST multipart `category`, `image` | none | Product try-on in the browser |
+| `https://mirror.maxaix.com/api/history` | POST JSON | none | Browsing-flow reports |
 | `https://www.dickssportinggoods.com/` | page | the shopper's own session | Retailer, cart |
 
-The Dio interceptor attaches the Decart key **only** to Decart requests (`isDecartRequest`), never to `mirror.maxaix.com`.
+The full styling API is in [docs/app-api.md](docs/app-api.md). The Dio client ([api_client.dart](lib/core/services/api_client.dart)) has no base URL and attaches no credentials.
 
 ---
 
 ## 6. Tech stack and architecture
 
-- **Flutter**, Dart `>=3.10.0 <4.0.0`, **MVVM** under `lib/features/<feature>/{models,repositories,view_models,views}`. The rules are written up in [.github/rules/](.github/rules/).
-- **State:** `hooks_riverpod` + `flutter_hooks` + `riverpod_annotation`. Providers are code-generated (`*.g.dart`).
+- **Flutter**, Dart `>=3.10.0 <4.0.0`, **MVVM** under `lib/features/<feature>/{models,repositories,view_models,views}`. Rules in [.github/rules/](.github/rules/).
+- **State:** `hooks_riverpod` + `flutter_hooks` + `riverpod_annotation`, code-generated providers.
+- **Camera and media:** `camera`, `image_picker`, `image`, `video_player`.
 - **Web:** `webview_flutter` plus the Android and WKWebView platform packages.
-- **Networking:** `dio` + `pretty_dio_logger`, through [api_client.dart](lib/core/services/api_client.dart) and `BaseApiService`.
-- **Storage:** `shared_preferences` (history), `flutter_secure_storage` (optional user Decart key).
-- **Misc:** `permission_handler`, `connectivity_plus` (`InternetCheckerWidget`), `package_info_plus`, `toastification`, `flutter_screenutil` (design size 375×812), `awesome_notifications` (set up but unused).
-- **Tooling:** `build_runner`, `flutter_gen_runner`, `flutter_launcher_icons`, `flutter_native_splash`.
-- **Screen:** portrait only, edge to edge, black "stage" theme.
+- **Networking:** `dio` + `pretty_dio_logger`, through `BaseApiService`.
+- **Storage:** `shared_preferences` (history).
+- **UI:** `flutter_screenutil` (375×812), `flutter_svg`, Montserrat and Caveat Brush bundled.
+- **Screen:** portrait only, edge to edge, dark stage.
 
 ```
 lib/
-├── core/            config/env.dart, constants/, routes/, services/, theme/, widgets/
-├── features/home/        HomeScreen (hidden)
-├── features/try_on/      Decart live try-on (hidden)
-└── features/web_view/    browser, product try-on, checkout, history  ← the live app
+├── core/               config/env.dart, constants/, routes/, services/, theme/, widgets/
+├── features/style_me/  the kiosk flow  ← the live app
+├── features/web_view/  browser, product try-on, checkout, history
+└── features/home/      browser + history list (debug)
 ```
 
 ---
@@ -150,62 +115,48 @@ lib/
 | staging | `lib/main_staging.dart` | `com.livelook.app.staging` | Mirror Staging (orange banner) |
 | production | `lib/main.dart` | `com.livelook.app` | Mirror |
 
-The env files are `.env.development`, `.env.staging` and `.env.production`. They are gitignored and **bundled into the app as assets**. They hold these keys: `API_BASE_URL`, `API_WS_BASE_URL`, `API_VERSION`, `DECART_REALTIME_MODEL`, `DECART_API_KEY`, `TOKEN_ENDPOINT`, `ENABLE_LOGS`, `ENABLE_ANALYTICS`, `ENABLE_CRASH_REPORTING`.
+The env files `.env.development`, `.env.staging` and `.env.production` are gitignored and bundled as assets. They hold `API_BASE_URL` (the host every service is on — the same in every flavor for now), `ENABLE_LOGS`, `ENABLE_ANALYTICS` and `ENABLE_CRASH_REPORTING`. No secrets ship in the app.
 
 ```bash
 flutter pub get
 dart run build_runner build --delete-conflicting-outputs
 flutter run --flavor development -t lib/main_development.dart
-flutter test          # 190 tests, all passing as of 2026-09-24
+flutter test
 ```
 
 ---
 
-## 8. What the client has asked for so far
+## 8. What has been asked for so far
 
-> There is no written client brief in the repo. This timeline is **reconstructed from git history and project notes**, so please confirm it against the actual client conversations.
+> Reconstructed from git history and project notes; confirm against the client conversations.
 
 | Date | Ask / change | Status |
 |---|---|---|
-| 2026-09-01 | Port the **LiveLook** Next.js Decart try-on web app to Flutter in strict MVVM, phase by phase. Scope was **try-on only**: no hand gestures, no voice control, no cart, no settings. | ✅ Done |
-| 2026-09-02 | Live try-on working on **both iOS and Android** real devices. Garment prompts rewritten to the VTON 3.5 guide. Server-side token endpoint **deferred** (internal testers only). | ✅ Done / token deferred |
-| 2026-09-07 | README and demo video (LinkedIn). | ✅ Done |
-| 2026-09-11 | **In-app browser** with destinations (Mirror, DICK'S), a **history of every page opened**, and tracking of what the user tapped. | ✅ Done |
-| 2026-09-12 | **Try-on on retailer product pages** through `mirror.maxaix.com/api/tryon`, using the 4 categories (golf / athletics / workout / sports). | ✅ Done |
-| 2026-09-14 | **Rebrand to "Mirror"**, new icon and splash. App **opens straight into the mirror site** with no chrome. The mirror's cards hand links over through `ShopLink`. Try-on result shown as an image over the page. Branded loading cover. **Flow reporting to `/api/history`**. | ✅ Done |
-| 2026-09-15 | Loading cover lifts on first paint (faster). **Checkout from the try-on preview**: pick color / size / inseam, add to cart on DICK'S, open the cart. | ✅ Done (DICK'S only) |
-| 2026-09-16 | Camera and mic permission handling inside the web view (for the mirror site's own camera use). | ✅ Done |
+| 2026-09-01 | Port the LiveLook live try-on (Decart) to Flutter. | ✅ Done, later removed |
+| 2026-09-11 | In-app browser with destinations, a history of every page opened, and tap tracking. | ✅ Done |
+| 2026-09-12 | Try-on on retailer product pages through `mirror.maxaix.com/api/tryon`. | ✅ Done |
+| 2026-09-14 | Rebrand to **Mirror**. App opens straight into the mirror site. Flow reporting to `/api/history`. | ✅ Done, superseded |
+| 2026-09-15 | Checkout from the try-on preview: pick colour / size / inseam, add to cart on DICK'S. | ✅ Done (DICK'S only) |
+| 2026-10-01 | **Native Style Me flow.** Only DICK'S opens in the web view, for performance. The flow moves from the mirror site into Flutter screens, on the new app API (`/api/app/*`), with looks generated **only when the previews screen opens** so no generation is spent on a shopper who leaves. | ✅ Done |
+| 2026-10-01 | **Remove Decart.** The live engine, native SDKs, API key, env vars, garment catalog and docs. | ✅ Done |
 
 ---
 
-## 9. Known gaps and risks (fix before a wider release)
+## 9. Known gaps and risks
 
-1. **🔴 A Decart API key is in `.env.production`.** Right now all three env files, including production, hold a full `dct_*` key. Env files ship **unencrypted inside the IPA/APK**, so anyone can unzip the app and read the key. This contradicts [docs/api-key-security.md](docs/api-key-security.md) and the README, which both say production is blank. Blank it, or build the token endpoint and rotate the key.
-2. **No auth on `/api/tryon` and `/api/history`.** Anyone can call them, which is a cost and spam risk on the backend.
-3. **Hidden screens.** Home, Decart live try-on and History have no way in from the UI. Either link them or remove them.
-4. **Checkout depends on DICK'S page layout.** The script reads DICK'S page structure, so a redesign breaks it. It falls back to "finish on the page". Only DICK'S has a known `cartUrl`. Shoes (Width) haven't been tested.
-5. **Failed history sends are dropped.** There is no retry queue. The flow survives only in local history.
-6. **DICK'S first-visit interstitial.** The first visit on a fresh install loads a blank bot-check page that costs about 3.4 s once.
-7. **Stale docs and names.** The README still says "LiveLook", describes Home as the front door, and says tests cover only try-on. The bundle ID and channels still say `livelook`. [helpers.dart](lib/core/utils/helpers.dart) is empty. `NotificationService` is unused. Network timeouts are 300 s.
-8. **Bundled Decart catalog.** The 8 bundled garments can only change through a new build. The plan is in [docs/dynamic-catalog.md](docs/dynamic-catalog.md) and is waiting on a choice of backend.
+1. **No auth on the Maxaix APIs.** `/api/app/*`, `/api/tryon` and `/api/history` take no token; anyone can call them, and a generation costs money.
+2. **The intro video is bundled** (8.8 MB), which is most of the app's asset weight.
+3. **`GET /api/app/looks` is not read.** The four looks' labels and taglines are in `StyleCatalog`, because the cards also need images and colours the API does not send. If the server's menu is meant to change, wire it.
+4. **Checkout depends on DICK'S page layout.** A redesign breaks it; it falls back to "finish on the page".
+5. **Failed history sends are dropped.** No retry queue.
+6. **Names.** The bundle ID and the bridge channel still say `livelook`.
+7. **Not yet verified on a device since the port:** the live camera preview's mirroring, a real capture, and real looks arriving. The flow is tested with a fake camera and a scripted service.
 
 ---
 
-## 10. What more could be added (ideas to offer the client)
+## 10. What more could be added
 
-**High value, fits what already exists**
-- **Try-on with the shopper's own photo.** Today only the product photo is sent, so the result shows whoever the backend chooses. Adding a selfie (captured once and reused) would make it *"see it on me"*.
-- **Merge the two engines.** Add a **"Try live"** button on a product page that feeds the product photo into the Decart live camera session as the reference image. The native bridge already accepts any image.
-- **Save, share and compare try-ons.** Keep a gallery of past try-on images, share to WhatsApp or Instagram, and view two side by side.
-- **Wishlist / "tried on" list** linked back to each product page.
-
-**Retail coverage**
-- More retailers, each defined as a `WebDestination` with its cart URL and checkout tuning. Test footwear (Width) and more categories.
-- Real-time price, stock and size availability shown in the preview (the options data already carries availability).
-
-**Business and analytics**
-- An analytics dashboard on top of `/api/history`: try-on → add-to-cart conversion, most-tried products, drop-off points. Also wire up the `ENABLE_ANALYTICS` / `ENABLE_CRASH_REPORTING` flags to real SDKs (e.g. Firebase Analytics + Crashlytics).
-- Push notifications (the package is already installed), e.g. price drops on tried-on items or cart reminders.
-
-**Production readiness**
-- A token endpoint for Decart, auth or rate limits on the Maxaix APIs, a retry queue for history sends, a remote garment catalog, user accounts, localization (currently en-US only), and a proper App Store / Play Store release pipeline.
+- **Save, share and compare looks**: a gallery of past looks, share to WhatsApp or Instagram, two side by side.
+- **More retailers**, each a `WebDestination` with its cart URL and checkout tuning.
+- **Analytics** on top of `/api/history`: look → shelf → add-to-cart conversion, drop-off points. Wire `ENABLE_ANALYTICS` / `ENABLE_CRASH_REPORTING` to real SDKs.
+- **Production readiness**: auth or rate limits on the Maxaix APIs, a retry queue for history sends, user accounts, localization (en-US only), a release pipeline.

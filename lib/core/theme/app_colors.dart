@@ -34,6 +34,16 @@ class AppColors {
 
   static const Color live = Color(0xFF4ADE80);
 
+  // ─── Style Me (Dick's) ─────────────────────────────────────────────
+  // The kiosk flow's own palette, taken from the web mirror it replaces.
+  static const Color styleTeal = Color(0xFF16E0C9);
+
+  /// Text on a teal fill.
+  static const Color styleOnTeal = Color(0xFF05231C);
+  static const Color styleStage = Color(0xFF091714);
+  static const Color styleCard = Color(0xFF0C1A15);
+  static const Color styleDeepGreen = Color(0xFF006554);
+
   static const Color success = Color(0xFF16A34A);
   static const Color error = Color(0xFFDC2626);
   static const Color warning = Color(0xFFF59E0B);

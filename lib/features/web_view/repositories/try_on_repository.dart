@@ -27,11 +27,22 @@ class TryOnRepository extends BaseApiService {
   /// business holding in memory.
   static const int maxImageBytes = 12 * 1024 * 1024;
 
+  /// The error a try-on fails with when the photo it named is gone. The
+  /// caller uploads the photo again and asks once more.
+  static const String photoExpired = 'photo_expired';
+
   /// Which of the service's four categories a product is tried on as.
   static TryOnCategory categoryFor(WebProduct product) =>
       resolveTryOnCategory(title: product.title, url: product.pageUrl);
 
-  Future<ApiResponse<TryOnResult>> requestTryOn(WebProduct product) async {
+  /// [photoId] names the shopper's uploaded photo. Without it the service
+  /// falls back to one slot shared by every device, which holds whoever
+  /// uploaded last — so two shoppers a few minutes apart get each other's
+  /// face. Null only when this session has no photo to name.
+  Future<ApiResponse<TryOnResult>> requestTryOn(
+    WebProduct product, {
+    String? photoId,
+  }) async {
     final category = categoryFor(product);
 
     final image = await _downloadImage(product.imageUrl);
@@ -40,7 +51,7 @@ class TryOnRepository extends BaseApiService {
     }
 
     try {
-      final response = await _postForm(category, image);
+      final response = await _postForm(category, image, photoId);
       debugPrint(
         '[try-on] ${response.statusCode} from ${response.realUri} — '
         '${response.data}',
@@ -60,6 +71,13 @@ class TryOnRepository extends BaseApiService {
       );
     } on DioException catch (e) {
       debugPrint('[try-on] failed: ${e.response?.statusCode} ${e.message}');
+      final body = e.response?.data;
+      if (body is Map && body['code'] == photoExpired) {
+        return ApiResponse.failure(
+          photoExpired,
+          statusCode: e.response?.statusCode,
+        );
+      }
       return ApiResponse.failure(
         getDioErrorType(e).message,
         statusCode: e.response?.statusCode,
@@ -78,7 +96,8 @@ class TryOnRepository extends BaseApiService {
   /// streams its bytes once and cannot be replayed.
   Future<Response<dynamic>> _postForm(
     TryOnCategory category,
-    _ProductImage image, {
+    _ProductImage image,
+    String? photoId, {
     int maxRedirects = 3,
   }) async {
     var url = ApiEndpoints.tryOn;
@@ -86,7 +105,8 @@ class TryOnRepository extends BaseApiService {
     for (var attempt = 0; ; attempt++) {
       debugPrint(
         '[try-on] POST $url — category=${category.wireName}, '
-        '${image.filename}, ${image.bytes.length} bytes',
+        '${image.filename}, ${image.bytes.length} bytes, '
+        'photo_id=${photoId ?? 'none'}',
       );
 
       final response = await post(
@@ -94,6 +114,7 @@ class TryOnRepository extends BaseApiService {
         data: FormData.fromMap({
           // The service takes one of its four categories, not a product name.
           'category': category.wireName,
+          'photo_id': ?photoId,
           'image': MultipartFile.fromBytes(
             image.bytes,
             filename: image.filename,

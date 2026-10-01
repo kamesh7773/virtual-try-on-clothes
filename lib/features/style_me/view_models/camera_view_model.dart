@@ -6,11 +6,11 @@ import 'camera_state.dart';
 
 part 'camera_view_model.g.dart';
 
-/// Owns camera access for the try-on session.
+/// Owns camera access for the body snapshot.
 ///
-/// Only the permission gate lives here — the preview itself is a native view
-/// (see `CameraPreviewView`), and from phase 4 the Decart SDK owns the capture
-/// session. This view model decides whether that view should be shown at all.
+/// Only the permission gate lives here — the preview and the capture are the
+/// `GetReadyScreen`'s, through the camera plugin. This view model decides
+/// whether that preview may be opened at all.
 @riverpod
 class CameraViewModel extends _$CameraViewModel {
   @override
@@ -46,8 +46,9 @@ class CameraViewModel extends _$CameraViewModel {
 
     // A denial that iOS will not prompt for again has to be distinguished
     // here, otherwise the button silently stops doing anything.
-    final permanently =
-        await _permissions.isPermanentlyDenied(Permission.camera);
+    final permanently = await _permissions.isPermanentlyDenied(
+      Permission.camera,
+    );
     if (!ref.mounted) return;
 
     state = state.copyWith(
@@ -61,13 +62,11 @@ class CameraViewModel extends _$CameraViewModel {
   Future<void> openSettings() => _permissions.openSettings();
 
   CameraPermission _map(PermissionStatus status) => switch (status) {
-        PermissionStatus.granted ||
-        PermissionStatus.limited ||
-        PermissionStatus.provisional =>
-          CameraPermission.granted,
-        PermissionStatus.permanentlyDenied ||
-        PermissionStatus.restricted =>
-          CameraPermission.permanentlyDenied,
-        PermissionStatus.denied => CameraPermission.denied,
-      };
+    PermissionStatus.granted ||
+    PermissionStatus.limited ||
+    PermissionStatus.provisional => CameraPermission.granted,
+    PermissionStatus.permanentlyDenied ||
+    PermissionStatus.restricted => CameraPermission.permanentlyDenied,
+    PermissionStatus.denied => CameraPermission.denied,
+  };
 }

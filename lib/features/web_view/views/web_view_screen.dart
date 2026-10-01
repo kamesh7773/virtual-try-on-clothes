@@ -42,7 +42,14 @@ import 'widgets/web_loading_cover.dart';
 class WebViewScreen extends HookConsumerWidget {
   final WebDestination destination;
 
-  const WebViewScreen({super.key, required this.destination});
+  /// A page on [destination] to open instead of its home page — the shelf a
+  /// Style Me look leads to. Opened this way, the screen is a step in the
+  /// app's own flow, so its back control shows from the first page.
+  final String? initialUrl;
+
+  const WebViewScreen({super.key, required this.destination, this.initialUrl});
+
+  String get _startUrl => initialUrl ?? destination.url;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -57,7 +64,9 @@ class WebViewScreen extends HookConsumerWidget {
     final isLoading = useState<bool>(true);
     // Which site the page is on, which is what tells a link the browser
     // followed out apart from the destination's own pages.
-    final currentHost = useState<String>(destination.host);
+    final currentHost = useState<String>(
+      Uri.tryParse(_startUrl)?.host ?? destination.host,
+    );
     final history = ref.read(urlHistoryViewModelProvider.notifier);
     final flow = ref.read(historyFlowViewModelProvider.notifier);
     final tryOn = ref.watch(productTryOnViewModelProvider);
@@ -116,6 +125,7 @@ class WebViewScreen extends HookConsumerWidget {
     final controller = useMemoized(
       () => _createController(
         destination: destination,
+        startUrl: _startUrl,
         failure: failure,
         failedUrl: failedUrl,
         canGoBack: canGoBack,
@@ -156,10 +166,14 @@ class WebViewScreen extends HookConsumerWidget {
           visitStartedAt.value = DateTime.now();
 
           // The flow is the unit the backend is told about, and it is only a
-          // flow once it has left the mirror for a retailer.
+          // flow once it has left the mirror for a retailer. Judged against
+          // the mirror rather than [destination]: a retailer opened straight
+          // from a Style Me look is the retailer all the same.
           flow.noteVisit(
             visitId.value!,
-            isOwnSite: destination.isOwnSite(Uri.tryParse(url)?.host ?? ''),
+            isOwnSite: WebDestinations.mirror.isOwnSite(
+              Uri.tryParse(url)?.host ?? '',
+            ),
           );
         },
         onVisitFinished: (title) {
@@ -184,7 +198,7 @@ class WebViewScreen extends HookConsumerWidget {
         isMounted: () => context.mounted,
         onShowFileSelector: (params) => pickFilesForPage(context, params),
       ),
-      [destination.url],
+      [_startUrl],
     );
 
     // Asks the page to add the product, with the choices given by group
@@ -232,6 +246,11 @@ class WebViewScreen extends HookConsumerWidget {
     // clear again, and going back gives the screen away again.
     final edgeToEdge = WebDestinations.handlesOwnInsets(currentHost.value);
 
+    // Read from the view padding, which the keyboard does not take away:
+    // the bar is still there under it, and the frame must not jump as the
+    // keyboard comes and goes.
+    final buttonBar = hasButtonNavigationBar(MediaQuery.viewPaddingOf(context));
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // The stage is black, and the app now opens on it — dark status bar
       // icons would be invisible against it from the first frame.
@@ -272,14 +291,16 @@ class WebViewScreen extends HookConsumerWidget {
         child: Scaffold(
           backgroundColor: AppColors.stageBackground,
           // No chrome and no padding around the page, and the bottom is
-          // never inset: a page that stops above the home indicator reads
-          // as letterboxed, which is the look this screen has no chrome in
-          // order to avoid. The top is inset only for a site that does not
-          // know the status bar is there — see [WebDestinations
-          // .handlesOwnInsets].
+          // not inset for a gesture bar: a page that stops above the home
+          // indicator reads as letterboxed, which is the look this screen
+          // has no chrome in order to avoid. A bar of buttons is another
+          // matter — it is opaque, so what runs under it is simply cut off:
+          // the foot of the page, and the try-on offer with it. The top is
+          // inset only for a site that does not know the status bar is
+          // there — see [WebDestinations.handlesOwnInsets].
           body: SafeArea(
             top: !edgeToEdge,
-            bottom: false,
+            bottom: buttonBar,
             child: _Frame(
               child: Stack(
                 children: [
@@ -288,7 +309,7 @@ class WebViewScreen extends HookConsumerWidget {
                         ? _LoadFailure(
                             message: failure.value!,
                             onRetry: () {
-                              final retry = failedUrl.value ?? destination.url;
+                              final retry = failedUrl.value ?? _startUrl;
                               failure.value = null;
                               isLoading.value = true;
                               controller.loadRequest(Uri.parse(retry));
@@ -299,10 +320,12 @@ class WebViewScreen extends HookConsumerWidget {
                   // Only once the browser has followed a link off the
                   // destination's own site. The destination draws a back
                   // control of its own, and on its first page there is
-                  // nothing behind it to go back to.
-                  if (failure.value == null &&
-                      canGoBack.value &&
-                      !destination.isOwnSite(currentHost.value))
+                  // nothing behind it to go back to — unless the app opened
+                  // this page from a screen of its own, which is behind it.
+                  if (initialUrl != null ||
+                      (failure.value == null &&
+                          canGoBack.value &&
+                          !destination.isOwnSite(currentHost.value)))
                     Positioned(
                       // The page runs under the status bar, but this does not:
                       // a control sitting behind the clock is a control that
@@ -314,7 +337,14 @@ class WebViewScreen extends HookConsumerWidget {
                       child: WebOverlayButton(
                         icon: Icons.arrow_back_ios_new_rounded,
                         label: 'Back',
-                        onTap: controller.goBack,
+                        onTap: () async {
+                          if (failure.value == null &&
+                              await controller.canGoBack()) {
+                            await controller.goBack();
+                          } else if (context.mounted) {
+                            await Navigator.of(context).maybePop();
+                          }
+                        },
                       ),
                     ),
                   if (tryOn.canTryOn && failure.value == null)
@@ -400,6 +430,14 @@ class WebViewScreen extends HookConsumerWidget {
   }
 }
 
+/// Whether the system navigation bar under the screen is a bar of buttons
+/// — back, home, recents — rather than a gesture bar.
+///
+/// Told apart by height, which is all the system reports. A gesture bar is
+/// 34 points at its tallest, the iPhone's home indicator; three buttons are
+/// never under 48.
+bool hasButtonNavigationBar(EdgeInsets viewPadding) => viewPadding.bottom >= 40;
+
 /// The page, and nothing around it.
 ///
 /// Deliberately edge to edge: side gutters shrink the layout viewport, and a
@@ -423,6 +461,7 @@ class _Frame extends StatelessWidget {
 
 WebViewController _createController({
   required WebDestination destination,
+  required String startUrl,
   required ValueNotifier<String?> failure,
   required ValueNotifier<String?> failedUrl,
   required ValueNotifier<bool> canGoBack,
@@ -455,7 +494,7 @@ WebViewController _createController({
   // host rather than following a tracker into an iframe.
 
   // The page the user is looking at, recorded as the source of a tap.
-  var currentUrl = destination.url;
+  var currentUrl = startUrl;
 
   // The last link promoted out of a frame. A page that re-inserts the same
   // iframe while the promoted page is still loading would otherwise ask for
@@ -807,7 +846,10 @@ WebViewController _createController({
         debugPrint('[shop-link] ignored: ${message.message}');
         return;
       }
-      debugPrint('[shop-link] ${link.label} → ${link.url}');
+      debugPrint(
+        '[shop-link] ${link.label} (${link.context ?? 'no shelf named'}) '
+        '→ ${link.url}',
+      );
 
       // Filed before the load so the history records the card that was
       // tapped, rather than the retailer appearing out of nowhere.
@@ -816,7 +858,7 @@ WebViewController _createController({
         url: link.url.toString(),
         trigger: VisitTrigger.element,
         label: link.label,
-        context: "Men's Apparel",
+        context: link.context,
         sourceUrl: currentUrl,
       );
       pendingTapAt.value = DateTime.now();
@@ -824,7 +866,7 @@ WebViewController _createController({
     }),
   );
 
-  controller.loadRequest(Uri.parse(destination.url));
+  controller.loadRequest(Uri.parse(startUrl));
   return controller;
 }
 
@@ -1111,11 +1153,11 @@ void _applyPaintProbe(WebViewController controller) {
 /// Name of the channel the page posts tapped links to. Must match the script.
 const String _bridgeChannel = 'LiveLookBridge';
 
-/// Name of the channel the mirror posts its apparel links to.
+/// Name of the channel the mirror posts its retailer links to.
 ///
 /// Spelled by the site, not by this app: the page calls
 /// `ShopLink.postMessage(...)`, so renaming this silently stops the four
-/// apparel cards from opening anything.
+/// style cards from opening anything.
 const String _shopLinkChannel = 'ShopLink';
 
 /// Reports what the user tapped, and — where the destination asks for it —
@@ -1384,9 +1426,9 @@ const String _bridgeScript = r"""
     // finds nothing. On the page the offer was already made for, that is the
     // page still filling itself in, not the product going away. Only leaving
     // the page takes the offer with it.
-    if (!product && lastProductKey && location.href === lastProductUrl) return;
+    if (!product && lastProductKey && location.href === lastProductUrl) return false;
 
-    if (key === lastProductKey) return;
+    if (key === lastProductKey) return false;
     lastProductKey = key;
     lastProductUrl = location.href;
 
@@ -1403,6 +1445,7 @@ const String _bridgeScript = r"""
       console.log('livelook: no product on ' + location.href);
     }
     LiveLookBridge.postMessage(JSON.stringify(payload));
+    return true;
   }
 
   // ─── What the page lets the user do about buying ───────────────────
@@ -1553,7 +1596,7 @@ const String _bridgeScript = r"""
   // store is known to sell by, as against a bare heading with a colon.
   function headingOf(el) {
     var own = ownText(el);
-    if (!own || own.length > 70 || !visible(el)) return null;
+    if (!own || own.length > 70) return null;
     var name, chosen = '';
     var split = own.match(/^([A-Za-z][A-Za-z\/&' -]{0,28}?)\s*:\s*(.*)$/);
     if (split) {
@@ -1571,6 +1614,10 @@ const String _bridgeScript = r"""
     // A heading is not itself something to press.
     if (el.closest('button, a, [role="button"], [role="radio"], [role="option"]')) return null;
     if (el.tagName === 'LABEL' && el.control) return null;
+    // Asked last: it is the one question here the browser has to lay the
+    // page out to answer, and nearly every element has been ruled out by
+    // its words before it is reached.
+    if (!visible(el)) return null;
     return { name: name, chosen: chosen, known: known };
   }
 
@@ -1642,11 +1689,10 @@ const String _bridgeScript = r"""
     return [];
   }
 
-  // How far `el` is from the Add To Cart button: the number of steps up
-  // from the button to an ancestor holding both. A "Color:" row in a
-  // carousel of other products is further than the product's own.
-  function distanceFromCart(el) {
-    var add = addToCartControl();
+  // How far `el` is from `add`, the Add To Cart button: the number of
+  // steps up from the button to an ancestor holding both. A "Color:" row
+  // in a carousel of other products is further than the product's own.
+  function distanceFromCart(el, add) {
     var node = add;
     for (var depth = 0; node; depth++) {
       if (node.contains(el)) return depth;
@@ -1672,10 +1718,13 @@ const String _bridgeScript = r"""
       heads.push(head);
     }
     var groups = [];
+    // Found once for the whole scan: finding it reads every button on the
+    // page.
+    var add = headings.length ? addToCartControl() : null;
     for (var j = 0; j < headings.length; j++) {
       var values = valuesUnder(headings[j], heads[j], headings);
       if (!values.length) continue;
-      var group = { name: heads[j].name, values: values, distance: distanceFromCart(headings[j]) };
+      var group = { name: heads[j].name, values: values, distance: distanceFromCart(headings[j], add) };
       // Two rows under one name are two products; keep the one the
       // Add To Cart button is for.
       var taken = -1;
@@ -2131,19 +2180,85 @@ const String _bridgeScript = r"""
     }
   };
 
+  // ─── When the page is read ─────────────────────────────────────────
+  // Reading the options walks the whole document and has the browser lay
+  // it out, on the one thread the page also scrolls and answers taps on.
+  // A fast phone does that in a few milliseconds; a slow one takes long
+  // enough to feel, and the page is at its busiest just when the app asks
+  // most often. So the options are never read on the spot. They are read
+  // on a timer, when the page has a moment, and no sooner after the last
+  // reading than twenty times what that one took — about a twentieth of
+  // the thread, whatever the device. On a fast one that is the two
+  // seconds it always was.
+  var OPTIONS_EVERY = 2000;
+  var optionsTimer = null;
+  // True from the timer firing until the reading it asked for has run.
+  var optionsWaiting = false;
+  var optionsDue = 0;
+  // The earliest a hurried reading may run: see `readOptionsSoon`.
+  var optionsFloor = 0;
+
+  function readOptionsNow() {
+    optionsWaiting = false;
+    var from = Date.now();
+    try {
+      reportOptions();
+    } catch (e) {
+      console.log('livelook: options scan failed: ' + e);
+    }
+    var now = Date.now();
+    var took = now - from;
+    optionsDue = now + Math.max(OPTIONS_EVERY, took * 20);
+    optionsFloor = now + took * 5;
+    scheduleOptions();
+  }
+
+  function scheduleOptions() {
+    // A reading already on its way sets the next one itself.
+    if (optionsWaiting) return;
+    if (optionsTimer) clearTimeout(optionsTimer);
+    optionsTimer = setTimeout(function () {
+      optionsTimer = null;
+      optionsWaiting = true;
+      if (window.requestIdleCallback) {
+        window.requestIdleCallback(readOptionsNow, { timeout: 1000 });
+      } else {
+        readOptionsNow();
+      }
+    }, Math.max(0, optionsDue - Date.now()));
+  }
+
+  // For the moments the options are known to have just changed — another
+  // product, a tap on a size — when waiting out a slow device's full gap
+  // would leave the app asking about a choice already made. Still held to
+  // a share of the thread, a larger one: a shopper tapping through a
+  // carousel must not buy a reading with every tap.
+  function readOptionsSoon(within) {
+    var by = Math.max(Date.now() + within, optionsFloor);
+    if (by >= optionsDue) return;
+    optionsDue = by;
+    scheduleOptions();
+  }
+
   // Called again from the app on every injection, so a page that arrives
   // in pieces is looked at each time rather than only on its own schedule.
+  // What it is selling is cheap to read and is read here and now; what it
+  // offers to buy it by is left to the timer above.
   window.__livelookScan = function () {
-    reportProduct();
-    reportOptions();
+    if (reportProduct()) readOptionsSoon(300);
   };
 
   window.__livelookScan();
+  scheduleOptions();
   // Retail pages fill themselves in after the first paint, and a single-page
   // site swaps products without ever loading again.
   setInterval(window.__livelookScan, 2000);
 
   document.addEventListener('click', function (event) {
+    // A tap is what changes a choice, and the page needs a moment to redraw
+    // around it.
+    if (lastProductKey) readOptionsSoon(500);
+
     var node = event.target;
     var anchor = node && node.closest ? node.closest('a[href]') : null;
     var outside = anchor ? external(anchor.href) : null;
