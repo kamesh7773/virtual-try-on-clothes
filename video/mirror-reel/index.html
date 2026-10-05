@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <title>Mirror reel</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Inter"; font-weight: 500; src: url("assets/fonts/inter-500.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-weight: 600; src: url("assets/fonts/inter-600.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-weight: 700; src: url("assets/fonts/inter-700.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-weight: 800; src: url("assets/fonts/inter-800.woff2") format("woff2"); }
+      @font-face { font-family: "Montserrat"; font-weight: 600; src: url("assets/fonts/Montserrat-SemiBold.ttf"); }
+      @font-face { font-family: "Montserrat"; font-weight: 700; src: url("assets/fonts/Montserrat-Bold.ttf"); }
+      @font-face { font-family: "Caveat Brush"; font-weight: 400; src: url("assets/fonts/CaveatBrush-Regular.ttf"); }
+
+      :root { --canvas: #fdfdfd; --ink: #0e0e0e; --teal: #16e0c9; --onTeal: #05231c; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--canvas); }
+      #root { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--canvas); font-family: "Inter", sans-serif; color: var(--ink); }
+      .clip { position: absolute; inset: 0; }
+      .fill { position: absolute; inset: 0; }
+
+      /* ---------- Atmosphere ---------- */
+      .atmo { position: absolute; inset: 0; overflow: hidden; background: #05100d; }
+      .atmoCam { position: absolute; inset: 0; }
+      .sky {
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(90% 40% at 50% 52%, rgba(22, 224, 201, 0.45) 0%, rgba(0, 101, 84, 0.3) 38%, rgba(5, 16, 13, 0) 72%),
+          linear-gradient(180deg, #030907 0%, #071814 40%, #0a2e27 52%, #05100d 100%);
+      }
+      .horizon {
+        position: absolute; left: -1100px; width: 3280px; height: 2200px; top: 1000px; border-radius: 50%;
+        background: radial-gradient(40% 25% at 50% 0%, #0e5247 0%, #082520 40%, #030a08 100%);
+        border-top: 3px solid rgba(170, 255, 242, 0.85);
+        box-shadow: 0 -4px 26px rgba(22, 224, 201, 0.9), 0 -60px 180px rgba(22, 224, 201, 0.4);
+      }
+      .paneStage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+      .paneRig { position: relative; width: 300px; height: 430px; }
+      .pane {
+        position: absolute; inset: 0; border-radius: 36px; overflow: hidden;
+        background: linear-gradient(155deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.07) 38%, rgba(22,224,201,0.12) 64%, rgba(255,255,255,0.24) 100%);
+        border: 3px solid rgba(255, 255, 255, 0.6);
+        box-shadow: 0 0 110px rgba(22, 224, 201, 0.4), inset 0 0 36px rgba(255, 255, 255, 0.2), inset 0 -60px 80px rgba(22, 224, 201, 0.28);
+        backdrop-filter: blur(10px);
+      }
+      .paneReflect {
+        position: absolute; left: 0; right: 0; top: 458px; height: 430px; border-radius: 36px;
+        background: linear-gradient(25deg, rgba(255,255,255,0.2), rgba(22,224,201,0.18));
+        border: 3px solid rgba(255, 255, 255, 0.35);
+        -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 40%);
+        mask-image: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 40%);
+      }
+      .sheenRig { position: absolute; top: -40%; left: -70%; width: 60%; height: 180%; }
+      .sheen { width: 100%; height: 100%; transform: rotate(18deg); background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 100%); }
+      .tileFill {
+        position: absolute; inset: 0; opacity: 0;
+        background:
+          radial-gradient(90% 70% at 30% 20%, rgba(22, 224, 201, 0.55) 0%, rgba(0, 101, 84, 0.25) 45%, rgba(9, 23, 20, 0) 75%),
+          linear-gradient(160deg, #0f2b25 0%, #091714 60%, #05100d 100%);
+      }
+      .whiteout { position: absolute; inset: 0; background: var(--canvas); opacity: 0; }
+
+      /* Hook type on the dark world */
+      .hook { position: absolute; left: 0; right: 0; top: 1060px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+      .hookLine { font-weight: 800; font-size: 132px; line-height: 1.04; letter-spacing: -0.045em; color: #fff; white-space: nowrap; position: relative; }
+      .mark { position: relative; display: inline-block; padding: 0 22px; color: var(--onTeal); }
+      .markBg { position: absolute; inset: 10px 0 2px 0; background: var(--teal); border-radius: 18px; transform-origin: 0 50%; }
+      .markTxt { position: relative; }
+
+      /* ---------- Phone ---------- */
+      #glow { position: absolute; left: 90px; top: 520px; width: 900px; height: 1100px; border-radius: 50%;
+        background: radial-gradient(closest-side, rgba(22, 224, 201, 0.16), rgba(22, 224, 201, 0)); }
+      #cam { position: absolute; inset: 0; transform-origin: 540px 960px; }
+      #phoneWrap { position: absolute; left: 160px; top: 300px; width: 760px; height: 1516px; }
+      .phone {
+        position: absolute; inset: 0; border-radius: 104px; background: #f7f7f7; padding: 18px;
+        border: 1px solid #e2e2e2;
+        box-shadow: 0 60px 120px rgba(0, 0, 0, 0.14), 0 12px 30px rgba(0, 0, 0, 0.08);
+      }
+      .screen { position: relative; width: 724px; height: 1480px; border-radius: 86px; overflow: hidden; background: #000; }
+      .layer { position: absolute; inset: 0; overflow: hidden; opacity: 0; }
+      .ui { position: absolute; left: 0; top: 0; width: 1170px; height: 2391px; transform: scale(0.618803); transform-origin: 0 0; }
+      .shot { position: absolute; left: 0; width: 1170px; }
+
+      .camCard { position: absolute; left: 149px; top: 1172px; width: 876px; height: 1014px; border-radius: 64px; overflow: hidden; background: #1a1d1c; }
+      .camFeed { position: absolute; inset: -40px; background: url("assets/img/stage_backdrop.webp") center / cover; filter: blur(18px) brightness(0.62) saturate(0.8); }
+      .silhouette { position: absolute; left: 288px; top: 94px; width: 300px; height: 860px; opacity: 0.9; }
+      .bracket { position: absolute; width: 190px; height: 190px; border: 0 solid #36e3cd; filter: drop-shadow(0 0 10px rgba(22,224,201,0.7)); }
+      .note { position: absolute; font-family: "Caveat Brush", cursive; color: #fff; font-size: 92px; line-height: 0.92; }
+      .tag { position: absolute; font-family: "Montserrat", sans-serif; font-weight: 600; color: rgba(255,255,255,0.92); font-size: 30px; letter-spacing: 0.2em; line-height: 1.6; }
+      .shutterRing { position: absolute; left: 462px; top: 2003px; width: 246px; height: 246px; border-radius: 50%; background: #000; border: 16px solid #4fe0cc; box-shadow: 0 0 40px rgba(22, 224, 201, 0.75); }
+      .shutterDot { position: absolute; left: 497px; top: 2038px; width: 176px; height: 176px; border-radius: 50%; background: #fff; }
+
+      .avatarCover { position: absolute; left: 974px; top: 96px; width: 112px; height: 112px; border-radius: 50%; background: #26302d; border: 4px solid rgba(255, 255, 255, 0.4); overflow: hidden; }
+      .tile { position: absolute; width: 474px; height: 632px; border-radius: 46px; overflow: hidden; background: #0b1411; }
+      
+      .brand { position: absolute; left: 60px; top: 236px; display: flex; align-items: center; gap: 20px; padding: 14px 30px 14px 14px; border-radius: 34px; background: rgba(8, 10, 24, 0.55); backdrop-filter: blur(14px); border: 2px solid rgba(255,255,255,0.25); }
+      .brand img { width: 96px; height: 96px; display: block; }
+      .brandName { font-weight: 800; font-size: 50px; letter-spacing: -0.03em; color: #fff; line-height: 1; }
+      .brandSub { font-weight: 600; font-size: 26px; letter-spacing: 0.16em; color: rgba(255,255,255,0.8); margin-top: 6px; }
+      .logoImg { position: absolute; inset: -3px; width: calc(100% + 6px); height: calc(100% + 6px); opacity: 0; }
+      .tileImg { position: absolute; left: 0; top: 0; width: 100%; height: 470px; background-size: cover; background-position: center top; }
+      .tileShade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11,20,17,0) 30%, rgba(11,20,17,0.75) 58%, #0b1411 74%); }
+      .tileLabel { position: absolute; left: 44px; top: 372px; font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 66px; color: #fff; letter-spacing: -0.01em; }
+      .tileTag { position: absolute; left: 46px; top: 462px; font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 31px; letter-spacing: 0.2em; }
+      .tileBtn { position: absolute; left: 44px; top: 521px; height: 72px; padding: 0 34px; border-radius: 40px; display: flex; align-items: center; background: #63dec6; color: #08241d; font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 34px; white-space: nowrap; }
+      .badge { position: absolute; left: 1070px; top: 64px; width: 54px; height: 54px; border-radius: 50%; background: #c4561a; color: #fff; font-weight: 500; font-size: 34px; display: flex; align-items: center; justify-content: center; border: 3px solid #fff; }
+
+      .ripple { position: absolute; width: 150px; height: 150px; margin: -75px 0 0 -75px; border-radius: 50%; background: rgba(255, 255, 255, 0.55); border: 3px solid #fff; opacity: 0; }
+      #burst { position: absolute; left: 857px; top: 374px; width: 0; height: 0; }
+      .sparkRig { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+      .spark { position: absolute; left: -8px; top: -26px; width: 16px; height: 52px; border-radius: 8px; background: var(--teal); }
+
+      /* Big look labels during the punch-ins */
+      .bigLabel {
+        position: absolute; left: 0; right: 0; top: 1270px; text-align: center;
+        font-weight: 800; font-size: 168px; letter-spacing: -0.05em; color: #fff; line-height: 1;
+        text-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+      }
+      .scrim { position: absolute; left: 0; right: 0; top: 1060px; bottom: 0; background: linear-gradient(180deg, rgba(5,16,13,0) 0%, rgba(5,16,13,0.82) 38%, rgba(5,16,13,0.92) 100%); }
+      .scan { position: absolute; left: 0; right: 0; top: 0; height: 260px; background: linear-gradient(180deg, rgba(22,224,201,0) 0%, rgba(22,224,201,0.35) 80%, #16e0c9 100%); border-bottom: 6px solid #9ff7ec; box-shadow: 0 0 60px rgba(22,224,201,0.8); opacity: 0; }
+      .count {
+        position: absolute; left: 0; right: 0; top: 1470px; text-align: center;
+        font-weight: 700; font-size: 40px; letter-spacing: 0.24em; color: rgba(255,255,255,0.92); text-shadow: 0 4px 18px rgba(0,0,0,0.6);
+      }
+
+      /* Caption stickers */
+      .sticker {
+        position: absolute; left: 0; right: 0; top: 228px; display: flex; justify-content: center; opacity: 0;
+      }
+      .stickerBody {
+        display: flex; align-items: center; gap: 18px; padding: 22px 38px; border-radius: 22px;
+        font-weight: 800; font-size: 56px; letter-spacing: -0.02em; text-transform: uppercase; white-space: nowrap;
+        background: #fff; color: var(--ink); box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18); border: 3px solid var(--ink);
+      }
+      .stickerBody.teal { background: var(--teal); color: var(--onTeal); border-color: var(--onTeal); }
+      .stickerBody.ink { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+      /* Try-on full bleed */
+      #tryonInner { position: absolute; inset: 0; overflow: hidden; }
+      #tryonImg { position: absolute; inset: 0; background: url("assets/img/tryon_tall_new.jpg") center / cover; }
+      .checkout {
+        position: absolute; left: 90px; width: 900px; top: 1330px; height: 130px; background: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 44px; letter-spacing: 0.36em; color: #111;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+      }
+      .flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+
+      /* Tagline stack */
+      .stack { position: absolute; left: 0; right: 0; top: 560px; display: flex; flex-direction: column; align-items: center; }
+      .sLine { font-weight: 800; font-size: 176px; line-height: 1.02; letter-spacing: -0.055em; color: var(--ink); white-space: nowrap; }
+
+      /* Lockup */
+      #lockWord { position: absolute; left: 0; right: 0; top: 1030px; text-align: center; font-weight: 700; font-size: 168px; letter-spacing: -0.045em; color: var(--ink); }
+      #lockSub { position: absolute; left: 0; right: 0; top: 1250px; display: flex; align-items: center; justify-content: center; gap: 18px; font-weight: 600; font-size: 44px; color: #5a5a5a; }
+      #lockSub img { height: 62px; display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="15" data-width="1080" data-height="1920">
+
+      <!-- R1 · 0–1.5 hook on the dark world -->
+      <section id="openWorld" class="clip" data-start="0" data-duration="1.75" data-track-index="1">
+        <div class="atmo" data-layout-allow-overflow>
+          <div id="openCam" class="atmoCam">
+            <div class="sky"></div>
+            <div id="openHorizon" class="horizon"></div>
+            <div class="paneStage">
+              <div id="openPane" class="paneRig">
+                <div class="pane"><div id="openSheen" class="sheenRig"><div class="sheen"></div></div></div>
+                <div class="paneReflect"></div>
+              </div>
+            </div>
+          </div>
+          <div class="hook">
+            <div id="h1" class="hookLine">Try it on</div>
+            <div id="h2" class="hookLine">before you</div>
+            <div id="h3" class="hookLine"><span class="mark"><span id="h3bg" class="markBg"></span><span class="markTxt">buy it.</span></span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- R2–R7 · the phone -->
+      <section id="phoneScene" class="clip" data-start="1.5" data-duration="10.0" data-track-index="2">
+        <div id="glow"></div>
+        <div id="cam">
+          <div id="phoneWrap">
+            <div class="phone">
+              <div class="screen">
+                <div id="lGetReady" class="layer">
+                  <div class="ui" style="background:#000">
+                    <img class="shot" style="top:85px" src="assets/img/screen_getready.jpg" alt="" />
+                    <div class="camCard">
+                      <img src="assets/img/shopper_face.jpg" alt="" style="position:absolute;left:-60px;top:-40px;width:996px;height:1100px;object-fit:cover;object-position:50% 40%;transform:scaleX(-1);filter:brightness(0.9) saturate(0.95)" />
+                      <div class="bracket" style="left:133px;top:56px;border-top-width:8px;border-left-width:8px;border-top-left-radius:28px"></div>
+                      <div class="bracket" style="left:550px;top:56px;border-top-width:8px;border-right-width:8px;border-top-right-radius:28px"></div>
+                      <div class="bracket" style="left:133px;top:794px;border-bottom-width:8px;border-left-width:8px;border-bottom-left-radius:28px"></div>
+                      <div class="bracket" style="left:550px;top:794px;border-bottom-width:8px;border-right-width:8px;border-bottom-right-radius:28px"></div>
+                    </div>
+                    <div class="note" style="left:92px;top:1408px;transform:rotate(-6deg)">STEP<br />&nbsp;BACK</div>
+                    <div class="tag" style="left:92px;top:1714px">FULL BODY<br />IN FRAME</div>
+                    <div class="note" style="left:905px;top:1650px;transform:rotate(5deg)">LOOK<br />HERE</div>
+                    <div class="tag" style="right:88px;top:1958px;text-align:right">STAND<br />NATURALLY</div>
+                    <div class="shutterRing"></div>
+                    <div id="shutterDot" class="shutterDot"></div>
+                  </div>
+                </div>
+
+                <div id="lLoading" class="layer">
+                  <div class="ui"><img class="shot" style="top:0" src="assets/img/screen_loading.jpg" alt="" /><div id="scan" class="scan"></div></div>
+                </div>
+
+                <div id="lGrid" class="layer">
+                  <div class="ui" style="background:#0c1512">
+                    <img class="shot" style="top:85px" src="assets/img/screen_grid.jpg" alt="" />
+                    <div class="avatarCover"><img src="assets/img/shopper_face.jpg" alt="" style="width:100%;height:100%;object-fit:cover;display:block" /></div>
+                    <div id="tGolf" class="tile" style="left:88px;top:579px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_golf.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Golf</div>
+                      <div class="tileTag" style="color:#93e2b8">COURSE-READY</div>
+                      <div id="golfBtn" class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div>
+                    </div>
+                    <div id="tAthletics" class="tile" style="left:607px;top:579px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_athletics.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Athletics</div>
+                      <div class="tileTag" style="color:#f1c95b">BUILT TO PERFORM</div>
+                      <div class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div>
+                    </div>
+                    <div id="tWorkout" class="tile" style="left:88px;top:1259px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_workout.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Workout</div>
+                      <div class="tileTag" style="color:#9fd4f5">TRAIN HARDER</div>
+                      <div class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div>
+                    </div>
+                    <div id="tSports" class="tile" style="left:607px;top:1259px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_sports.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Sports</div>
+                      <div class="tileTag" style="color:#d7a8f5">GAME DAY</div>
+                      <div class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="lProduct" class="layer">
+                  <div class="ui" style="background:#fff"><img class="shot" style="top:0" src="assets/img/screen_product.jpg" alt="" /></div>
+                </div>
+
+                <div id="lCart" class="layer">
+                  <div class="ui" style="background:#fff">
+                    <img class="shot" style="top:0" src="assets/img/screen_cart.jpg" alt="" />
+                    <div id="badge" class="badge">1</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="rpShutter" class="ripple" style="left:540px;top:1634px"></div>
+          <div id="rpGolf" class="ripple" style="left:374px;top:1020px"></div>
+          <div id="rpTry" class="ripple" style="left:540px;top:1709px"></div>
+          <div id="burst"></div>
+        </div>
+
+        <!-- Look labels over the punch-ins -->
+        <div id="bigLabels" class="fill" data-layout-allow-overlap data-layout-allow-occlusion>
+          <div class="scrim"></div>
+          <div id="bl0" class="bigLabel">GOLF</div>
+          <div id="bl1" class="bigLabel">ATHLETICS</div>
+          <div id="bl2" class="bigLabel">WORKOUT</div>
+          <div id="bl3" class="bigLabel">SPORTS</div>
+          <div id="blCount" class="count">LOOK <span id="cnum">1</span> / 4</div>
+        </div>
+
+        <!-- Caption stickers -->
+        <div id="st1" class="sticker"><div class="stickerBody">Snap one photo</div></div>
+        <div id="st2" class="sticker"><div class="stickerBody teal">AI styles you</div></div>
+        <div id="st3" class="sticker"><div class="stickerBody ink">4 looks. 1 photo.</div></div>
+        <div id="st4" class="sticker"><div class="stickerBody">Shop it on DICK'S</div></div>
+        <div id="st6" class="sticker"><div class="stickerBody teal">
+          <svg width="52" height="52" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6.5" fill="none" stroke="#05231c" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          Added to cart</div></div>
+      </section>
+
+      <!-- Flashes on the cuts -->
+      <section id="flashA" class="clip" data-start="1.4" data-duration="0.4" data-track-index="3"><div id="fA" class="flash"></div></section>
+      <section id="flashB" class="clip" data-start="2.95" data-duration="0.4" data-track-index="3"><div id="fB" class="flash"></div></section>
+
+      <!-- R5 · try-on full bleed -->
+      <section id="tryon" class="clip" data-start="8.0" data-duration="2.45" data-track-index="5">
+        <div id="tryonInner" data-layout-allow-overflow>
+          <div id="tryonImg"></div>
+          <div id="brand" class="brand"><img src="assets/img/app_logo.png" alt="Mirror" /><div><div class="brandName">Mirror</div><div class="brandSub">AI TRY-ON</div></div></div>
+          <div id="st5" class="sticker" style="top:1150px"><div class="stickerBody">Your fit. On you.</div></div>
+          <div id="checkout" class="checkout">CHECKOUT&nbsp;&nbsp;→</div>
+          <div id="rpCheckout" class="ripple" style="left:540px;top:1395px"></div>
+        </div>
+      </section>
+
+      <!-- R8 · tagline stack -->
+      <section id="card" class="clip" data-start="11.5" data-duration="2.0" data-track-index="4">
+        <div class="stack">
+          <div id="s1" class="sLine">See it</div>
+          <div id="s2" class="sLine">on you.</div>
+          <div id="s3" class="sLine">Then</div>
+          <div id="s4" class="sLine"><span class="mark"><span id="s4bg" class="markBg"></span><span class="markTxt">shop it.</span></span></div>
+        </div>
+      </section>
+
+      <!-- R9 · lockup -->
+      <section id="closeWorld" class="clip" data-start="13.5" data-duration="1.5" data-track-index="1">
+        <div class="atmo" data-layout-allow-overflow>
+          <div id="closeCam" class="atmoCam">
+            <div class="sky" style="filter:brightness(1.35) saturate(1.15)"></div>
+            <div class="horizon" style="top:1120px"></div>
+          </div>
+          <div id="closeWhite" class="whiteout"></div>
+          <div class="paneStage">
+            <div id="closePane" class="paneRig">
+              <div id="closePaneBody" class="pane">
+                <img id="logoImg" class="logoImg" src="assets/img/app_logo.png" alt="Mirror" />
+                <div id="closeSheen" class="sheenRig"><div class="sheen"></div></div>
+              </div>
+            </div>
+          </div>
+          <div id="lockWord">Mirror</div>
+          <div id="lockSub"><span>at</span><img src="assets/img/dicks_logo.svg" alt="DICK'S" /><span>Sporting Goods</span></div>
+        </div>
+      </section>
+
+      <!-- Sound: synthesized beat bed + effects on every action -->
+      <audio id="bed" src="assets/sfx/beat.wav" data-start="0" data-duration="15" data-track-index="10" data-volume="0.95"></audio>
+      <audio id="aPop1" src="assets/sfx/pop.mp3" data-start="0.15" data-duration="0.5" data-track-index="11" data-volume="0.55"></audio>
+      <audio id="aPop2" src="assets/sfx/pop.mp3" data-start="0.55" data-duration="0.5" data-track-index="12" data-volume="0.55"></audio>
+      <audio id="aPop3" src="assets/sfx/pop.mp3" data-start="0.95" data-duration="0.5" data-track-index="13" data-volume="0.7"></audio>
+      <audio id="aWhoosh1" src="assets/sfx/whoosh-short.mp3" data-start="1.3" data-duration="0.57" data-track-index="14" data-volume="0.6"></audio>
+      <audio id="aStick1" src="assets/sfx/pop.mp3" data-start="1.75" data-duration="0.5" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="aShutter" src="assets/sfx/click.mp3" data-start="2.5" data-duration="0.36" data-track-index="15" data-volume="1"></audio>
+      <audio id="aStick2" src="assets/sfx/sparkle.mp3" data-start="3.0" data-duration="1.0" data-track-index="16" data-volume="0.45"></audio>
+      <audio id="aCut1" src="assets/sfx/whoosh-short.mp3" data-start="3.95" data-duration="0.57" data-track-index="14" data-volume="0.4"></audio>
+      <audio id="aCut2" src="assets/sfx/whoosh-short.mp3" data-start="4.45" data-duration="0.57" data-track-index="17" data-volume="0.4"></audio>
+      <audio id="aCut3" src="assets/sfx/whoosh-short.mp3" data-start="4.95" data-duration="0.57" data-track-index="14" data-volume="0.4"></audio>
+      <audio id="aCut4" src="assets/sfx/whoosh-short.mp3" data-start="5.45" data-duration="0.57" data-track-index="17" data-volume="0.4"></audio>
+      <audio id="aStick3" src="assets/sfx/pop.mp3" data-start="6.05" data-duration="0.5" data-track-index="12" data-volume="0.35"></audio>
+      <audio id="aTap1" src="assets/sfx/click.mp3" data-start="6.75" data-duration="0.36" data-track-index="15" data-volume="0.75"></audio>
+      <audio id="aWhip" src="assets/sfx/whoosh.mp3" data-start="6.95" data-duration="0.8" data-track-index="18" data-volume="0.5"></audio>
+      <audio id="aStick4" src="assets/sfx/pop.mp3" data-start="7.1" data-duration="0.5" data-track-index="13" data-volume="0.35"></audio>
+      <audio id="aTap2" src="assets/sfx/click.mp3" data-start="7.95" data-duration="0.36" data-track-index="15" data-volume="0.75"></audio>
+      <audio id="aMatch" src="assets/sfx/whoosh-cinematic.mp3" data-start="8.0" data-duration="1.4" data-track-index="19" data-volume="0.5"></audio>
+      <audio id="aStick5" src="assets/sfx/pop.mp3" data-start="8.6" data-duration="0.5" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="aTap3" src="assets/sfx/click.mp3" data-start="9.75" data-duration="0.36" data-track-index="15" data-volume="0.75"></audio>
+      <audio id="aBack" src="assets/sfx/whoosh-short.mp3" data-start="9.95" data-duration="0.57" data-track-index="14" data-volume="0.45"></audio>
+      <audio id="aSparkle" src="assets/sfx/sparkle.mp3" data-start="10.5" data-duration="1.3" data-track-index="16" data-volume="0.6"></audio>
+      <audio id="aChime" src="assets/sfx/chime.mp3" data-start="10.52" data-duration="1.6" data-track-index="20" data-volume="0.55"></audio>
+      <audio id="aOut" src="assets/sfx/whoosh-short.mp3" data-start="11.35" data-duration="0.57" data-track-index="17" data-volume="0.45"></audio>
+      <audio id="aS1" src="assets/sfx/pop.mp3" data-start="11.5" data-duration="0.5" data-track-index="12" data-volume="0.35"></audio>
+      <audio id="aS2" src="assets/sfx/pop.mp3" data-start="12.0" data-duration="0.5" data-track-index="13" data-volume="0.35"></audio>
+      <audio id="aS3" src="assets/sfx/pop.mp3" data-start="12.5" data-duration="0.5" data-track-index="11" data-volume="0.35"></audio>
+      <audio id="aS4" src="assets/sfx/pop.mp3" data-start="13.0" data-duration="0.5" data-track-index="12" data-volume="0.6"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      function pop(sel, t, from = {}) {
+        tl.set(sel, { opacity: 0, scale: 0.55, y: 40, filter: "blur(14px)", ...from }, 0);
+        tl.to(sel, { opacity: 1, scale: 1, y: 0, filter: "blur(0px)", rotation: 0, duration: 0.32, ease: "back.out(2.2)" }, t);
+      }
+      function sticker(sel, tIn, tOut, rot = -3) {
+        tl.set(sel, { opacity: 0, scale: 0.3, rotation: rot - 10 }, 0);
+        tl.to(sel, { opacity: 1, scale: 1, rotation: rot, duration: 0.3, ease: "back.out(2.6)" }, tIn);
+        if (tOut) tl.to(sel, { opacity: 0, scale: 0.8, y: -30, duration: 0.16, ease: "power2.in" }, tOut);
+      }
+      function ripple(sel, t) {
+        tl.set(sel, { scale: 0.2, opacity: 0.9 }, t);
+        tl.to(sel, { scale: 1.7, opacity: 0, duration: 0.5, ease: "power2.out" }, t);
+      }
+      function press(sel, t) {
+        tl.to(sel, { scale: 0.9, duration: 0.07, ease: "power2.in" }, t);
+        tl.to(sel, { scale: 1, duration: 0.14, ease: "back.out(3)" }, t + 0.07);
+      }
+      function flash(sel, t, peak = 0.95) {
+        tl.set(sel, { opacity: peak }, t);
+        tl.to(sel, { opacity: 0, duration: 0.28, ease: "power2.out" }, t);
+      }
+      function showLayer(sel, t) { tl.set(".layer", { opacity: 0 }, t); tl.set(sel, { opacity: 1 }, t); }
+      // A camera "bump" on the kick: tiny overshoot so cuts feel locked to the beat.
+      function bump(sel, t, base) {
+        tl.to(sel, { scale: base * 1.03, duration: 0.06, ease: "power2.out" }, t);
+        tl.to(sel, { scale: base, duration: 0.3, ease: "power2.out" }, t + 0.06);
+      }
+
+      function build() {
+        /* ---------- R1 · 0–1.5 hook ---------- */
+        tl.fromTo("#openCam", { scale: 1 }, { scale: 1.08, duration: 1.5, ease: "none" }, 0);
+        tl.fromTo("#openPane", { rotationY: -18, transformPerspective: 1400, y: -250 }, { rotationY: -4, y: -220, duration: 1.4, ease: "sine.inOut" }, 0);
+        tl.fromTo("#openSheen", { x: 0 }, { x: 680, duration: 1.4, ease: "power1.inOut" }, 0.05);
+        pop("#h1", 0.15);
+        pop("#h2", 0.55);
+        pop("#h3", 0.95);
+        tl.fromTo("#h3bg", { scaleX: 0 }, { scaleX: 1, duration: 0.28, ease: "power3.out" }, 1.05);
+        // Into the drop: the pane rushes the lens, hook flies up.
+        tl.to("#openPane", { scale: 4.5, y: 200, opacity: 0, duration: 0.25, ease: "power3.in" }, 1.28);
+        tl.to(".hook", { y: -120, opacity: 0, filter: "blur(16px)", duration: 0.22, ease: "power3.in" }, 1.3);
+        flash("#fA", 1.48);
+
+        /* ---------- R2 · 1.5–3.0 snap one photo ---------- */
+        showLayer("#lGetReady", 1.5);
+        tl.fromTo("#cam", { scale: 1.9, x: -2, y: -754 }, { scale: 1, x: 0, y: 0, duration: 0.7, ease: "expo.out" }, 1.5);
+        sticker("#st1", 1.75, 2.9, -3);
+        press("#shutterDot", 2.44);
+        ripple("#rpShutter", 2.48);
+        flash("#fB", 2.5, 0.9);
+        showLayer("#lLoading", 2.55);
+        tl.to("#cam", { scale: 1.08, duration: 1.0, ease: "sine.out" }, 2.55);
+        sticker("#st2", 3.0, 3.85, 2);
+        tl.set("#scan", { y: -260, opacity: 1 }, 2.6);
+        tl.to("#scan", { y: 2391, duration: 0.85, ease: "power1.inOut" }, 2.6);
+
+        /* ---------- R3 · 3.5–6.0 the four looks, punched in on the beat ---------- */
+        showLayer("#lGrid", 3.5);
+        tl.set("#cam", { scale: 1, x: 0, y: 0 }, 3.5);
+        bump("#cam", 3.5, 1);
+        ["#tGolf", "#tAthletics", "#tWorkout", "#tSports"].forEach((t, i) => {
+          tl.fromTo(`${t} .tileImg`, { filter: "blur(18px)", opacity: 0.3 }, { filter: "blur(0px)", opacity: 1, duration: 0.35, ease: "power2.out" }, 3.52 + i * 0.08);
+        });
+        const shots = [
+          { x: 322, y: -84 }, { x: -320, y: -84 }, { x: 322, y: -924 }, { x: -320, y: -924 },
+        ];
+        shots.forEach((s, i) => {
+          const t = 4.0 + i * 0.5;
+          tl.to("#cam", { scale: 2, x: s.x, y: s.y, duration: 0.14, ease: "power3.out" }, t - 0.04);
+          tl.to("#cam", { scale: 2.1, duration: 0.4, ease: "none" }, t + 0.1);
+          tl.set(".bigLabel", { opacity: 0 }, t - 0.04);
+          tl.fromTo(`#bl${i}`, { opacity: 0, scale: 1.4, filter: "blur(10px)" }, { opacity: 1, scale: 1, filter: "blur(0px)", duration: 0.16, ease: "power3.out" }, t - 0.02);
+          tl.set("#cnum", { textContent: String(i + 1) }, t - 0.04);
+        });
+        tl.set("#blCount, .scrim", { opacity: 0 }, 0);
+        tl.set("#blCount", { opacity: 1 }, 3.96);
+        tl.to(".scrim", { opacity: 1, duration: 0.12 }, 3.94);
+        tl.to("#bigLabels", { opacity: 0, duration: 0.1 }, 5.96);
+        tl.to("#cam", { scale: 1, x: 0, y: 0, duration: 0.35, ease: "expo.out" }, 5.96);
+        sticker("#st3", 6.05, 6.6, -2);
+
+        /* ---------- R4 · 6.5–8.0 pick golf → DICK'S product page ---------- */
+        press("#tGolf", 6.72);
+        ripple("#rpGolf", 6.75);
+        tl.set("#lProduct", { opacity: 1, xPercent: 100 }, 6.95);
+        tl.to("#lProduct", { xPercent: 0, duration: 0.3, ease: "power4.out" }, 6.95);
+        tl.to("#lGrid", { xPercent: -35, duration: 0.3, ease: "power4.out" }, 6.95);
+        tl.fromTo("#phoneWrap", { filter: "blur(0px)" }, { filter: "blur(5px)", duration: 0.08, yoyo: true, repeat: 1, ease: "none" }, 6.97);
+        sticker("#st4", 7.1, 7.85, -3);
+        tl.to("#cam", { scale: 1.05, y: -120, duration: 0.8, ease: "sine.inOut" }, 7.1);
+        ripple("#rpTry", 7.97);
+
+        /* ---------- R5 · 8.0–10.0 match cut to the try-on, checkout ---------- */
+        tl.set("#cam", { scale: 1, y: 0 }, 8.0);
+        tl.fromTo("#tryonInner",
+          { clipPath: "inset(1675px 774px 176px 239px round 10px)" },
+          { clipPath: "inset(0px 0px 0px 0px round 0px)", duration: 0.45, ease: "expo.inOut" }, 8.0);
+        tl.fromTo("#tryonImg", { scale: 1.3 }, { scale: 1.0, duration: 1.9, ease: "power2.out" }, 8.0);
+        sticker("#st5", 8.6, 9.6, 3);
+        tl.fromTo("#brand", { opacity: 0, x: -60, filter: "blur(10px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.35, ease: "back.out(1.8)" }, 8.45);
+        tl.fromTo("#checkout", { y: 80, opacity: 0 }, { y: 0, opacity: 1, duration: 0.3, ease: "back.out(1.8)" }, 9.25);
+        press("#checkout", 9.72);
+        ripple("#rpCheckout", 9.75);
+
+        /* ---------- R6 · 9.95–11.5 into the cart ---------- */
+        showLayer("#lCart", 9.9);
+        tl.set("#lProduct, #lGrid", { xPercent: 0 }, 9.9);
+        tl.to("#tryonInner", { clipPath: "inset(318px 178px 122px 178px round 86px)", duration: 0.4, ease: "expo.inOut" }, 9.95);
+        tl.to("#tryonInner", { opacity: 0, duration: 0.15, ease: "none" }, 10.28);
+        tl.fromTo("#badge", { scale: 0 }, { scale: 1.4, duration: 0.18, ease: "back.out(3)" }, 10.5);
+        tl.to("#badge", { scale: 1, duration: 0.2, ease: "power2.out" }, 10.68);
+        bump("#cam", 10.5, 1);
+        sticker("#st6", 10.55, 11.3, -2);
+        const burst = document.getElementById("burst");
+        for (let i = 0; i < 10; i++) {
+          const rig = document.createElement("div");
+          rig.className = "sparkRig";
+          rig.style.transform = `rotate(${36 * i}deg)`;
+          const s = document.createElement("div");
+          s.className = "spark";
+          rig.appendChild(s);
+          burst.appendChild(rig);
+          tl.set(s, { y: -30, scaleY: 0.2, opacity: 0 }, 0);
+          tl.to(s, { y: -150, scaleY: 1, opacity: 1, duration: 0.22, ease: "power3.out" }, 10.52);
+          tl.to(s, { y: -210, scaleY: 0.1, opacity: 0, duration: 0.3, ease: "power2.in" }, 10.74);
+        }
+        tl.to("#phoneWrap", { y: -1700, filter: "blur(12px)", duration: 0.28, ease: "power3.in" }, 11.3);
+        tl.to("#glow", { opacity: 0, duration: 0.2 }, 11.3);
+
+        /* ---------- R7 · 11.5–13.5 tagline stack, one line per beat ---------- */
+        pop("#s1", 11.5);
+        pop("#s2", 12.0);
+        pop("#s3", 12.5);
+        pop("#s4", 13.0);
+        tl.fromTo("#s4bg", { scaleX: 0 }, { scaleX: 1, duration: 0.25, ease: "power3.out" }, 13.08);
+        tl.to(".stack", { scale: 1.06, duration: 2.0, ease: "none" }, 11.5);
+
+        /* ---------- R8 · 13.5–15 lockup on the impact ---------- */
+        tl.fromTo("#closeCam", { scale: 1.12 }, { scale: 1.0, duration: 0.5, ease: "power3.out" }, 13.5);
+        tl.fromTo("#closePane", { rotationY: -24, transformPerspective: 1400, y: -200, scale: 1.5 },
+          { rotationY: 0, scale: 1, duration: 0.3, ease: "power3.out" }, 13.5);
+        tl.fromTo("#closeSheen", { x: 0 }, { x: 720, duration: 0.8, ease: "power2.inOut" }, 13.52);
+        tl.to("#closePane", { width: 240, height: 240, y: -180, rotation: -8, duration: 0.4, ease: "expo.inOut" }, 13.72);
+        tl.to("#closePaneBody", { borderRadius: 54, duration: 0.4, ease: "expo.inOut" }, 13.72);
+        tl.to("#logoImg", { opacity: 1, duration: 0.25, ease: "none" }, 13.8);
+        tl.to("#closePaneBody", { borderColor: "rgba(255,255,255,0)", boxShadow: "0 30px 70px rgba(80, 60, 200, 0.35)", duration: 0.3, ease: "none" }, 13.8);
+        tl.to("#closeWhite", { opacity: 1, duration: 0.3, ease: "power1.inOut" }, 13.82);
+        pop("#lockWord", 13.98);
+        tl.fromTo("#lockSub", { opacity: 0, y: 20, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.35, ease: "power2.out" }, 14.25);
+
+        window.__timelines["main"] = tl;
+      }
+
+      document.fonts.ready.then(build);
+    </script>
+  </body>
+</html>

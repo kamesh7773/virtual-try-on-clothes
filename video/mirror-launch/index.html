@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Mirror launch</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Inter"; font-weight: 400; src: url("assets/fonts/inter-400.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-weight: 500; src: url("assets/fonts/inter-500.woff2") format("woff2"); }
+      @font-face { font-family: "Inter"; font-weight: 600; src: url("assets/fonts/inter-600.woff2") format("woff2"); }
+      @font-face { font-family: "Montserrat"; font-weight: 500; src: url("assets/fonts/Montserrat-Medium.ttf"); }
+      @font-face { font-family: "Montserrat"; font-weight: 600; src: url("assets/fonts/Montserrat-SemiBold.ttf"); }
+      @font-face { font-family: "Montserrat"; font-weight: 700; src: url("assets/fonts/Montserrat-Bold.ttf"); }
+      @font-face { font-family: "Caveat Brush"; font-weight: 400; src: url("assets/fonts/CaveatBrush-Regular.ttf"); }
+
+      :root {
+        --canvas: #fdfdfd;
+        --ink: #0e0e0e;
+        --arriving: #5a5a5a;
+        --pending: #b4b4b4;
+        --teal: #16e0c9;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--canvas); }
+      #root {
+        position: relative; width: 100%; height: 100%; overflow: hidden;
+        background: var(--canvas); font-family: "Inter", sans-serif; color: var(--ink);
+      }
+      .clip { position: absolute; inset: 0; }
+      .fill { position: absolute; inset: 0; }
+
+      /* ---------- Text cards ---------- */
+      .line {
+        position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 500; font-size: 120px; letter-spacing: -0.02em; white-space: nowrap;
+      }
+      .line .w { display: inline-block; margin: 0 0.13em; color: var(--ink); }
+
+      /* ---------- Atmosphere ---------- */
+      .atmo { position: absolute; inset: 0; overflow: hidden; background: #05100d; }
+      .atmoCam { position: absolute; inset: 0; }
+      .sky {
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(70% 45% at 50% 66%, rgba(22, 224, 201, 0.42) 0%, rgba(0, 101, 84, 0.3) 35%, rgba(5, 16, 13, 0) 70%),
+          linear-gradient(180deg, #030907 0%, #071814 45%, #0a2e27 66%, #05100d 100%);
+      }
+      .horizon {
+        position: absolute; left: -760px; width: 3440px; height: 1700px; top: 712px; border-radius: 50%;
+        background: radial-gradient(55% 30% at 50% 0%, #0e5247 0%, #082520 40%, #030a08 100%);
+        border-top: 3px solid rgba(170, 255, 242, 0.85);
+        box-shadow: 0 -4px 24px rgba(22, 224, 201, 0.9), 0 -50px 160px rgba(22, 224, 201, 0.4);
+      }
+      .paneStage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+      .paneRig { position: relative; width: 230px; height: 330px; }
+      .pane {
+        position: absolute; inset: 0; border-radius: 28px; overflow: hidden;
+        background: linear-gradient(155deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.07) 38%, rgba(22,224,201,0.12) 64%, rgba(255,255,255,0.24) 100%);
+        border: 2px solid rgba(255, 255, 255, 0.6);
+        box-shadow: 0 0 90px rgba(22, 224, 201, 0.38), inset 0 0 30px rgba(255, 255, 255, 0.2), inset 0 -50px 70px rgba(22, 224, 201, 0.28);
+        backdrop-filter: blur(10px);
+      }
+      .paneReflect {
+        position: absolute; left: 0; right: 0; top: 352px; height: 330px; border-radius: 28px;
+        background: linear-gradient(25deg, rgba(255,255,255,0.2), rgba(22,224,201,0.18));
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        -webkit-mask-image: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 45%);
+        mask-image: linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0) 45%);
+      }
+      .sheenRig { position: absolute; top: -40%; left: -70%; width: 60%; height: 180%; }
+      .sheen {
+        width: 100%; height: 100%; transform: rotate(18deg);
+        background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 100%);
+      }
+      .tileFill {
+        position: absolute; inset: 0; opacity: 0;
+        background:
+          radial-gradient(90% 70% at 30% 20%, rgba(22, 224, 201, 0.55) 0%, rgba(0, 101, 84, 0.25) 45%, rgba(9, 23, 20, 0) 75%),
+          linear-gradient(160deg, #0f2b25 0%, #091714 60%, #05100d 100%);
+      }
+      .atmoText {
+        position: absolute; left: 0; right: 0; top: 820px; height: 90px;
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 500; font-size: 64px; letter-spacing: -0.02em; color: rgba(255, 255, 255, 0.88); white-space: nowrap;
+      }
+      #typeLine { position: relative; display: inline-block; }
+      #typeLine .ch { visibility: hidden; }
+      #caret {
+        position: absolute; top: 6px; left: 0; width: 4px; height: 72px; background: rgba(255, 255, 255, 0.88);
+      }
+      .whiteout { position: absolute; inset: 0; background: var(--canvas); opacity: 0; }
+
+      /* ---------- Phone ---------- */
+      #cam { position: absolute; inset: 0; transform-origin: 960px 540px; }
+      #phoneWrap { position: absolute; left: 738px; top: 99px; width: 444px; height: 882px; }
+      .phone {
+        position: absolute; inset: 0; border-radius: 64px; background: #f7f7f7; padding: 12px;
+        border: 1px solid #e4e4e4;
+        box-shadow: 0 40px 80px rgba(0, 0, 0, 0.1), 0 8px 20px rgba(0, 0, 0, 0.06);
+      }
+      .screen { position: relative; width: 420px; height: 858px; border-radius: 52px; overflow: hidden; background: #000; }
+      .island { position: absolute; top: 12px; left: 150px; width: 120px; height: 34px; border-radius: 20px; background: #000; z-index: 20; }
+      .layer { position: absolute; inset: 0; overflow: hidden; opacity: 0; }
+      .ui { position: absolute; left: 0; top: 0; width: 1170px; height: 2391px; transform: scale(0.358974); transform-origin: 0 0; }
+      .shot { position: absolute; left: 0; width: 1170px; }
+
+      /* Get Ready camera (rebuilt, faceless) */
+      .camCard {
+        position: absolute; left: 149px; top: 1172px; width: 876px; height: 1014px; border-radius: 64px; overflow: hidden;
+        background: #1a1d1c;
+      }
+      .camFeed {
+        position: absolute; inset: -40px; background: url("assets/img/stage_backdrop.webp") center / cover;
+        filter: blur(18px) brightness(0.62) saturate(0.8);
+      }
+      .silhouette { position: absolute; left: 288px; top: 120px; width: 300px; height: 860px; opacity: 0.9; }
+      .bracket { position: absolute; width: 190px; height: 190px; border: 0 solid #36e3cd; filter: drop-shadow(0 0 10px rgba(22,224,201,0.7)); }
+      .note { position: absolute; font-family: "Caveat Brush", cursive; color: #fff; font-size: 92px; line-height: 0.92; }
+      .tag { position: absolute; font-family: "Montserrat", sans-serif; font-weight: 600; color: rgba(255,255,255,0.92); font-size: 30px; letter-spacing: 0.2em; line-height: 1.6; }
+      .shutterRing {
+        position: absolute; left: 462px; top: 2003px; width: 246px; height: 246px; border-radius: 50%;
+        background: #000; border: 16px solid #4fe0cc; box-shadow: 0 0 40px rgba(22, 224, 201, 0.75);
+      }
+      .shutterDot { position: absolute; left: 497px; top: 2038px; width: 176px; height: 176px; border-radius: 50%; background: #fff; }
+
+      /* Looks grid (rebuilt tiles, faceless crops) */
+      .avatarCover {
+        position: absolute; left: 974px; top: 96px; width: 112px; height: 112px; border-radius: 50%;
+        background: #26302d; border: 4px solid rgba(255, 255, 255, 0.4); overflow: hidden;
+      }
+      .tile {
+        position: absolute; width: 474px; height: 632px; border-radius: 46px; overflow: hidden;
+        background: #0b1411;
+      }
+      
+      .brand { position: absolute; left: 56px; top: 52px; display: flex; align-items: center; gap: 18px; padding: 12px 28px 12px 12px; border-radius: 30px; background: rgba(8, 10, 24, 0.55); backdrop-filter: blur(14px); border: 2px solid rgba(255,255,255,0.25); }
+      .brand img { width: 84px; height: 84px; display: block; }
+      .brandName { font-weight: 600; font-size: 44px; letter-spacing: -0.03em; color: #fff; line-height: 1; }
+      .brandSub { font-weight: 600; font-size: 22px; letter-spacing: 0.16em; color: rgba(255,255,255,0.8); margin-top: 6px; }
+      .logoImg { position: absolute; inset: -2px; width: calc(100% + 4px); height: calc(100% + 4px); opacity: 0; }
+      .tileImg { position: absolute; left: 0; top: 0; width: 100%; height: 470px; background-size: cover; background-position: center top; }
+      .tileShade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11,20,17,0) 30%, rgba(11,20,17,0.75) 58%, #0b1411 74%); }
+      .tileLabel { position: absolute; left: 44px; top: 372px; font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 66px; color: #fff; letter-spacing: -0.01em; }
+      .tileTag { position: absolute; left: 46px; top: 462px; font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 31px; letter-spacing: 0.2em; }
+      .tileBtn {
+        position: absolute; left: 44px; top: 521px; height: 72px; padding: 0 34px; border-radius: 40px;
+        display: flex; align-items: center; background: #63dec6; color: #08241d;
+        font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 34px; white-space: nowrap;
+      }
+      .tileDim { position: absolute; inset: 0; background: #000; opacity: 0; }
+
+      /* Cart badge */
+      .badge {
+        position: absolute; left: 1070px; top: 64px; width: 54px; height: 54px; border-radius: 50%;
+        background: #c4561a; color: #fff; font-family: "Inter", sans-serif; font-weight: 500; font-size: 34px;
+        display: flex; align-items: center; justify-content: center; border: 3px solid #fff;
+      }
+
+      /* Interaction marks */
+      .ripple { position: absolute; width: 90px; height: 90px; margin: -45px 0 0 -45px; border-radius: 50%; background: rgba(255, 255, 255, 0.55); border: 2px solid rgba(255,255,255,0.9); opacity: 0; }
+      .flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+      #burst { position: absolute; left: 1143px; top: 144px; width: 0; height: 0; }
+      .spark { position: absolute; left: -5px; top: -16px; width: 10px; height: 32px; border-radius: 5px; background: var(--teal); }
+      .sparkRig { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+
+      /* Slot wheel */
+      #wheelList { position: absolute; left: 0; right: 0; top: 96px; }
+      .wrow {
+        height: 124px; display: flex; align-items: center; justify-content: center;
+        font-weight: 500; font-size: 112px; letter-spacing: -0.02em; color: var(--pending);
+      }
+
+      /* Try-on full bleed */
+      #tryonInner { position: absolute; inset: 0; overflow: hidden; }
+      #tryonImg { position: absolute; inset: 0; background: url("assets/img/tryon_wide_new.jpg") center / cover; }
+      .checkout {
+        position: absolute; left: 460px; width: 1000px; bottom: 72px; height: 104px; background: #fff;
+        display: flex; align-items: center; justify-content: center;
+        font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 34px; letter-spacing: 0.38em; color: #111;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+      }
+
+      /* Lockup */
+      .lockStage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+      #lockWord {
+        position: absolute; left: 884px; top: 446px; font-weight: 600; font-size: 112px; letter-spacing: -0.03em; color: var(--ink);
+      }
+      #lockSub {
+        position: absolute; left: 0; right: 0; top: 650px; display: flex; align-items: center; justify-content: center; gap: 16px;
+        font-weight: 500; font-size: 32px; color: var(--arriving); letter-spacing: -0.01em;
+      }
+      #lockSub img { height: 44px; display: block; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="15" data-width="1920" data-height="1080">
+
+      <!-- S1–S2 · opening atmosphere -->
+      <section id="openWorld" class="clip" data-start="0" data-duration="3.4" data-track-index="1">
+        <div class="atmo" data-layout-allow-overflow>
+          <div id="openCam" class="atmoCam">
+            <div class="sky"></div>
+            <div id="openHorizon" class="horizon"></div>
+            <div class="paneStage">
+              <div id="openPane" class="paneRig">
+                <div class="pane"><div id="openSheen" class="sheenRig"><div class="sheen"></div></div></div>
+                <div class="paneReflect"></div>
+              </div>
+            </div>
+          </div>
+          <div id="openText" class="atmoText"><span id="introWord">Introducing</span></div>
+          <div class="atmoText"><span id="typeLine"></span></div>
+          <div id="openWhite" class="whiteout"></div>
+          <div id="stylesLine" class="line"></div>
+        </div>
+      </section>
+
+      <!-- S3–S7 · the phone -->
+      <section id="phoneScene" class="clip" data-start="3.15" data-duration="9.25" data-track-index="2">
+        <div id="wheel" class="fill" data-layout-allow-overlap data-layout-allow-occlusion>
+          <div id="wheelList"></div>
+        </div>
+        <div id="cam">
+          <div id="phoneWrap">
+            <div class="phone">
+              <div class="screen">
+
+                <!-- Get Ready -->
+                <div id="lGetReady" class="layer">
+                  <div class="ui" style="background:#000">
+                    <img class="shot" style="top:85px" src="assets/img/screen_getready.jpg" alt="" />
+                    <div class="camCard">
+                      <img src="assets/img/shopper_face.jpg" alt="" style="position:absolute;left:-60px;top:-40px;width:996px;height:1100px;object-fit:cover;object-position:50% 40%;transform:scaleX(-1);filter:brightness(0.9) saturate(0.95)" />
+                      <div class="bracket" style="left:133px;top:56px;border-top-width:8px;border-left-width:8px;border-top-left-radius:28px"></div>
+                      <div class="bracket" style="left:550px;top:56px;border-top-width:8px;border-right-width:8px;border-top-right-radius:28px"></div>
+                      <div class="bracket" style="left:133px;top:794px;border-bottom-width:8px;border-left-width:8px;border-bottom-left-radius:28px"></div>
+                      <div class="bracket" style="left:550px;top:794px;border-bottom-width:8px;border-right-width:8px;border-bottom-right-radius:28px"></div>
+                    </div>
+                    <div class="note" style="left:92px;top:1408px;transform:rotate(-6deg)">STEP<br />&nbsp;BACK</div>
+                    <div class="tag" style="left:92px;top:1714px">FULL BODY<br />IN FRAME</div>
+                    <div class="note" style="left:905px;top:1650px;transform:rotate(5deg)">LOOK<br />HERE</div>
+                    <div class="tag" style="right:88px;top:1958px;text-align:right">STAND<br />NATURALLY</div>
+                    <div class="shutterRing"></div>
+                    <div id="shutterDot" class="shutterDot"></div>
+                  </div>
+                </div>
+
+                <!-- Loading -->
+                <div id="lLoading" class="layer">
+                  <div class="ui"><img class="shot" style="top:0" src="assets/img/screen_loading.jpg" alt="" /></div>
+                </div>
+
+                <!-- Looks grid -->
+                <div id="lGrid" class="layer">
+                  <div class="ui" style="background:#0c1512">
+                    <img class="shot" style="top:85px" src="assets/img/screen_grid.jpg" alt="" />
+                    <div class="avatarCover"><img src="assets/img/shopper_face.jpg" alt="" style="width:100%;height:100%;object-fit:cover;display:block" /></div>
+                    <div id="tGolf" class="tile" style="left:88px;top:579px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_golf.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Golf</div>
+                      <div class="tileTag" style="color:#93e2b8">COURSE-READY</div>
+                      <div id="golfBtn" class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div><div class="tileDim"></div>
+                    </div>
+                    <div id="tAthletics" class="tile" style="left:607px;top:579px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_athletics.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Athletics</div>
+                      <div class="tileTag" style="color:#f1c95b">BUILT TO PERFORM</div>
+                      <div class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div><div class="tileDim"></div>
+                    </div>
+                    <div id="tWorkout" class="tile" style="left:88px;top:1259px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_workout.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Workout</div>
+                      <div class="tileTag" style="color:#9fd4f5">TRAIN HARDER</div>
+                      <div class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div><div class="tileDim"></div>
+                    </div>
+                    <div id="tSports" class="tile" style="left:607px;top:1259px">
+                      <div class="tileImg" style="height:100%;background-image:url('assets/img/newlook_sports.jpg')"></div>
+                      <div class="tileShade"></div>
+                      <div class="tileLabel">Sports</div>
+                      <div class="tileTag" style="color:#d7a8f5">GAME DAY</div>
+                      <div class="tileBtn">GET THIS STYLE&nbsp;&nbsp;→</div><div class="tileDim"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Product page (DICK'S, in the in-app browser) -->
+                <div id="lProduct" class="layer">
+                  <div class="ui" style="background:#fff"><img class="shot" style="top:0" src="assets/img/screen_product.jpg" alt="" /></div>
+                </div>
+
+                <!-- Cart -->
+                <div id="lCart" class="layer">
+                  <div class="ui" style="background:#fff">
+                    <img class="shot" style="top:0" src="assets/img/screen_cart.jpg" alt="" />
+                    <div id="badge" class="badge">1</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="rpShutter" class="ripple" style="left:960px;top:874px"></div>
+          <div id="rpGolf" class="ripple" style="left:864px;top:518px"></div>
+          <div id="rpTry" class="ripple" style="left:960px;top:918px"></div>
+          <div id="burst"></div>
+        </div>
+      </section>
+
+      <!-- Shutter flash -->
+      <section id="flashClip" class="clip" data-start="4.25" data-duration="0.45" data-track-index="3">
+        <div id="flash" class="flash"></div>
+      </section>
+
+      <!-- S4 · text card -->
+      <section id="card1" class="clip" data-start="5" data-duration="1.3" data-track-index="4">
+        <div id="photoLine" class="line"></div>
+      </section>
+
+      <!-- S7 · try-on full bleed (match cut from the TRY THIS ON bar) -->
+      <section id="tryon" class="clip" data-start="10.1" data-duration="1.6" data-track-index="5">
+        <div id="tryonInner" data-layout-allow-overflow>
+          <div id="tryonImg"></div>
+          <div id="brand" class="brand"><img src="assets/img/app_logo.png" alt="Mirror" /><div><div class="brandName">Mirror</div><div class="brandSub">AI TRY-ON</div></div></div>
+          <div id="checkout" class="checkout">CHECKOUT&nbsp;&nbsp;→</div>
+          <div id="rpCheckout" class="ripple" style="left:960px;top:956px"></div>
+        </div>
+      </section>
+
+      <!-- S8 · tagline -->
+      <section id="card2" class="clip" data-start="12.2" data-duration="1.2" data-track-index="4">
+        <div id="tagLine" class="line"></div>
+      </section>
+
+      <!-- S9 · closing atmosphere → lockup -->
+      <section id="closeWorld" class="clip" data-start="13.4" data-duration="1.6" data-track-index="1">
+        <div class="atmo" data-layout-allow-overflow>
+          <div id="closeCam" class="atmoCam">
+            <div class="sky" style="filter:brightness(1.35) saturate(1.15)"></div>
+            <div id="closeHorizon" class="horizon" style="top:760px"></div>
+          </div>
+          <div id="closeWhite" class="whiteout"></div>
+          <div class="paneStage">
+            <div id="closePane" class="paneRig">
+              <div id="closePaneBody" class="pane">
+                <img id="logoImg" class="logoImg" src="assets/img/app_logo.png" alt="Mirror" />
+                <div id="closeSheen" class="sheenRig"><div class="sheen"></div></div>
+              </div>
+            </div>
+          </div>
+          <div id="lockWord">Mirror</div>
+          <div id="lockSub"><span>at</span><img src="assets/img/dicks_logo.svg" alt="DICK'S" /><span>Sporting Goods</span></div>
+        </div>
+      </section>
+
+      <!-- Sound -->
+      <audio id="sfxSwell" src="assets/sfx/whoosh-cinematic.mp3" data-start="0" data-duration="2.2" data-track-index="10" data-volume="0.35"></audio>
+      <audio id="sfxType" src="assets/sfx/typing.mp3" data-start="1.05" data-duration="0.9" data-track-index="11" data-volume="0.4"></audio>
+      <audio id="sfxW1" src="assets/sfx/whoosh-short.mp3" data-start="2.0" data-duration="0.57" data-track-index="12" data-volume="0.45"></audio>
+      <audio id="sfxW2" src="assets/sfx/whoosh-short.mp3" data-start="3.2" data-duration="0.57" data-track-index="13" data-volume="0.45"></audio>
+      <audio id="sfxShutter" src="assets/sfx/click.mp3" data-start="4.28" data-duration="0.36" data-track-index="14" data-volume="0.9"></audio>
+      <audio id="sfxW3" src="assets/sfx/whoosh-short.mp3" data-start="4.95" data-duration="0.57" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="sfxWord1" src="assets/sfx/click-soft.mp3" data-start="5.1" data-duration="0.36" data-track-index="15" data-volume="0.35"></audio>
+      <audio id="sfxWord2" src="assets/sfx/click-soft.mp3" data-start="5.6" data-duration="0.36" data-track-index="16" data-volume="0.35"></audio>
+      <audio id="sfxW4" src="assets/sfx/whoosh-short.mp3" data-start="6.05" data-duration="0.57" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfxTick1" src="assets/sfx/click-soft.mp3" data-start="6.3" data-duration="0.36" data-track-index="15" data-volume="0.5"></audio>
+      <audio id="sfxTick2" src="assets/sfx/click-soft.mp3" data-start="6.8" data-duration="0.36" data-track-index="16" data-volume="0.5"></audio>
+      <audio id="sfxTick3" src="assets/sfx/click-soft.mp3" data-start="7.3" data-duration="0.36" data-track-index="15" data-volume="0.5"></audio>
+      <audio id="sfxTick4" src="assets/sfx/click-soft.mp3" data-start="7.8" data-duration="0.36" data-track-index="16" data-volume="0.5"></audio>
+      <audio id="sfxTap1" src="assets/sfx/click.mp3" data-start="8.95" data-duration="0.36" data-track-index="14" data-volume="0.6"></audio>
+      <audio id="sfxW5" src="assets/sfx/whoosh-short.mp3" data-start="9.15" data-duration="0.57" data-track-index="12" data-volume="0.4"></audio>
+      <audio id="sfxTap2" src="assets/sfx/click.mp3" data-start="9.9" data-duration="0.36" data-track-index="14" data-volume="0.6"></audio>
+      <audio id="sfxMatch" src="assets/sfx/whoosh-cinematic.mp3" data-start="10.1" data-duration="1.4" data-track-index="10" data-volume="0.45"></audio>
+      <audio id="sfxTap3" src="assets/sfx/click.mp3" data-start="11.0" data-duration="0.36" data-track-index="14" data-volume="0.6"></audio>
+      <audio id="sfxSparkle" src="assets/sfx/sparkle.mp3" data-start="11.72" data-duration="1.3" data-track-index="17" data-volume="0.55"></audio>
+      <audio id="sfxChime" src="assets/sfx/chime.mp3" data-start="11.75" data-duration="1.6" data-track-index="18" data-volume="0.5"></audio>
+      <audio id="sfxW6" src="assets/sfx/whoosh-short.mp3" data-start="12.05" data-duration="0.57" data-track-index="13" data-volume="0.4"></audio>
+      <audio id="sfxHit" src="assets/sfx/impact-bass-1.mp3" data-start="13.4" data-duration="1.6" data-track-index="19" data-volume="0.6"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+
+      // Build a line of words at their final centred positions, so the line never re-centres.
+      function wordsInto(el, text) {
+        el.innerHTML = text.split(" ").map((w) => `<span class="w">${w}</span>`).join("");
+        return Array.from(el.querySelectorAll(".w"));
+      }
+      // The reference's word entrance: blur + fade in place, arriving grey, settling to ink.
+      function wordIn(word, t, opts = {}) {
+        const from = opts.from || "#5a5a5a";
+        const to = opts.to || "#0e0e0e";
+        tl.fromTo(word, { opacity: 0, filter: `blur(${opts.blur || 8}px)`, color: from },
+          { opacity: 1, filter: "blur(0px)", duration: 0.35, ease: "power2.out" }, t);
+        tl.to(word, { color: to, duration: opts.settle || 0.3, ease: "power1.out" }, t + (opts.hold ?? 0.15));
+      }
+      function lineOut(words, t) {
+        tl.to(words, { color: "#b4b4b4", duration: 0.12, ease: "none" }, t);
+        tl.to(words, { opacity: 0, duration: 0.14, ease: "power1.in" }, t + 0.1);
+      }
+      function ripple(sel, t) {
+        tl.set(sel, { scale: 0.2, opacity: 0.9 }, t);
+        tl.to(sel, { scale: 1.7, opacity: 0, duration: 0.5, ease: "power2.out" }, t);
+      }
+      function showLayer(sel, t) { tl.set(".layer", { opacity: 0 }, t); tl.set(sel, { opacity: 1 }, t); }
+
+      function build() {
+        /* ---------- S1 · 0.0–2.0 opening ---------- */
+        tl.fromTo("#openCam", { scale: 1 }, { scale: 1.06, duration: 2.0, ease: "none" }, 0);
+        tl.fromTo("#openPane", { rotationY: -16, transformPerspective: 1200, y: -10 }, { rotationY: -6, y: 10, duration: 2.0, ease: "sine.inOut" }, 0);
+        tl.fromTo("#openSheen", { x: 0 }, { x: 520, duration: 2.6, ease: "power1.inOut" }, 0.1);
+        tl.fromTo("#introWord", { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.4, ease: "power2.out" }, 0.45);
+        tl.to("#introWord", { opacity: 0, filter: "blur(10px)", duration: 0.18, ease: "power1.in" }, 0.9);
+
+        // Typewriter with caret: characters keep their final layout; the caret follows the last one.
+        const typeEl = document.getElementById("typeLine");
+        const text = "a new kind of mirror";
+        typeEl.innerHTML = text.split("").map((c) => `<span class="ch">${c === " " ? "&nbsp;" : c}</span>`).join("") + '<span id="caret"></span>';
+        const chars = Array.from(typeEl.querySelectorAll(".ch"));
+        const caret = document.getElementById("caret");
+        tl.set(caret, { x: 0, opacity: 0 }, 0);
+        tl.set(caret, { opacity: 1 }, 1.0);
+        const t0 = 1.05, step = 0.85 / chars.length;
+        chars.forEach((ch, i) => {
+          const t = t0 + i * step;
+          tl.set(ch, { visibility: "visible" }, t);
+          tl.set(caret, { x: ch.offsetLeft + ch.offsetWidth + 4 }, t);
+        });
+        tl.to(caret, { opacity: 0, duration: 0.01, repeat: 3, yoyo: true, repeatDelay: 0.16, ease: "none" }, 1.95);
+        tl.to("#typeLine", { opacity: 0, filter: "blur(12px)", y: -20, duration: 0.25, ease: "power2.in" }, 2.0);
+
+        /* ---------- S2 · 2.0–3.2 "that styles you" → whiteout ---------- */
+        tl.to("#openPane", { y: -760, rotationY: 4, duration: 0.8, ease: "power2.in" }, 2.0);
+        tl.to("#openHorizon", { y: -520, duration: 1.0, ease: "power2.inOut" }, 2.0);
+        tl.to("#openWhite", { opacity: 1, duration: 0.65, ease: "power1.inOut" }, 2.35);
+        const styles = wordsInto(document.getElementById("stylesLine"), "that styles you");
+        styles.forEach((w, i) => wordIn(w, 2.15 + i * 0.2, { from: "#bff7ee", to: "#0e0e0e", blur: 20, hold: 0.45, settle: 0.5 }));
+        lineOut(styles, 2.92);
+
+        /* ---------- S3 · 3.2–5.0 one photo (zoom-reveal) ---------- */
+        showLayer("#lGetReady", 3.15);
+        tl.set("#phoneWrap", { x: 0, y: 0, opacity: 0, filter: "blur(0px)" }, 3.15);
+        tl.to("#phoneWrap", { opacity: 1, duration: 0.2, ease: "none" }, 3.15);
+        tl.fromTo("#cam", { scale: 2.3, y: -405 }, { scale: 1, y: 0, duration: 1.05, ease: "expo.out" }, 3.2);
+        tl.fromTo("#shutterDot", { scale: 1 }, { scale: 0.82, duration: 0.08, ease: "power2.in", yoyo: true, repeat: 1 }, 4.24);
+        ripple("#rpShutter", 4.26);
+        tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.92, duration: 0.05, ease: "none" }, 4.28);
+        tl.to("#flash", { opacity: 0, duration: 0.3, ease: "power2.out" }, 4.36);
+        showLayer("#lLoading", 4.34);
+        tl.to("#cam", { scale: 1.04, duration: 0.6, ease: "sine.out" }, 4.36);
+        tl.to("#phoneWrap", { y: 1150, filter: "blur(6px)", duration: 0.32, ease: "power3.in" }, 4.95);
+
+        /* ---------- S4 · 5.0–6.2 "One photo. Four looks." ---------- */
+        const photo = wordsInto(document.getElementById("photoLine"), "One photo. Four looks.");
+        photo.forEach((w, i) => wordIn(w, 5.1 + i * 0.25));
+        tl.to("#photoLine", { y: -460, opacity: 0, filter: "blur(6px)", duration: 0.26, ease: "power3.in" }, 5.92);
+
+        /* ---------- S5 · 6.2–8.4 slot wheel over the looks ---------- */
+        showLayer("#lGrid", 6.0);
+        tl.set("#cam", { scale: 0.94, y: 0 }, 6.0);
+        tl.set("#phoneWrap", { filter: "blur(0px)" }, 6.0);
+        tl.set("#phoneWrap", { y: 1150 }, 6.0);
+        tl.to("#phoneWrap", { y: 231, duration: 0.42, ease: "power3.out" }, 6.02);
+        tl.to("#cam", { scale: 1.0, duration: 2.2, ease: "none" }, 6.2);
+        ["#tGolf", "#tAthletics", "#tWorkout", "#tSports"].forEach((t, i) => {
+          tl.fromTo(`${t} .tileImg`, { filter: "blur(16px)", opacity: 0.35 }, { filter: "blur(0px)", opacity: 1, duration: 0.45, ease: "power2.out" }, 6.3 + i * 0.1);
+        });
+
+        const looks = ["Golf", "Athletics", "Workout", "Sports", "Golf", "Athletics", "Workout"];
+        const list = document.getElementById("wheelList");
+        list.innerHTML = looks.map((w) => `<div class="wrow" data-layout-allow-overlap data-layout-allow-occlusion>${w}</div>`).join("");
+        const rows = Array.from(list.querySelectorAll(".wrow"));
+        const tiles = ["#tGolf", "#tAthletics", "#tWorkout", "#tSports"];
+        tl.fromTo("#wheelList", { y: 140, opacity: 0 }, { y: 0, opacity: 1, duration: 0.35, ease: "power3.out" }, 6.15);
+        [6.3, 6.8, 7.3, 7.8].forEach((t, k) => {
+          tl.to("#wheelList", { y: -k * 124, duration: 0.3, ease: "power3.inOut" }, t - 0.05);
+          rows.forEach((r, i) => {
+            const c = i === k ? "#0e0e0e" : "#b4b4b4";
+            const o = i < k ? 0.25 : 1;
+            tl.to(r, { color: c, opacity: o, duration: 0.2, ease: "none" }, t);
+          });
+          tiles.forEach((tile, i) => {
+            tl.to(`${tile} .tileDim`, { opacity: i === k ? 0 : 0.5, duration: 0.2, ease: "none" }, t);
+            tl.to(tile, { scale: i === k ? 1.04 : 1, duration: 0.25, ease: "power2.out" }, t);
+          });
+        });
+
+        /* ---------- S6 · 8.4–10.4 pick golf → DICK'S product page ---------- */
+        tl.to("#wheelList", { y: "+=80", opacity: 0, filter: "blur(8px)", duration: 0.3, ease: "power2.in" }, 8.3);
+        tl.to("#phoneWrap", { y: 0, duration: 0.5, ease: "power3.inOut" }, 8.4);
+        tiles.forEach((tile) => {
+          tl.to(`${tile} .tileDim`, { opacity: 0, duration: 0.25 }, 8.45);
+          tl.to(tile, { scale: 1, duration: 0.25 }, 8.45);
+        });
+        tl.to("#tGolf", { scale: 0.96, duration: 0.08, yoyo: true, repeat: 1, ease: "power2.in" }, 8.93);
+        ripple("#rpGolf", 8.95);
+        tl.set("#lProduct", { opacity: 1, xPercent: 100 }, 9.15);
+        tl.to("#lProduct", { xPercent: 0, duration: 0.42, ease: "power3.out" }, 9.15);
+        tl.to("#lGrid", { xPercent: -30, duration: 0.42, ease: "power3.out" }, 9.15);
+        tl.to("#cam", { scale: 1.03, duration: 1.0, ease: "sine.inOut" }, 9.2);
+        ripple("#rpTry", 9.9);
+
+        /* ---------- S7 · 10.1–12.2 match cut to the try-on, checkout, cart ---------- */
+        tl.set("#cam", { scale: 1 }, 10.1);
+        tl.fromTo("#tryonInner",
+          { clipPath: "inset(898px 1096px 142px 786px round 8px)" },
+          { clipPath: "inset(0px 0px 0px 0px round 0px)", duration: 0.55, ease: "expo.inOut" }, 10.1);
+        tl.fromTo("#tryonImg", { scale: 1.25 }, { scale: 1.0, duration: 1.15, ease: "power2.out" }, 10.1);
+        tl.fromTo("#brand", { opacity: 0, x: -50, filter: "blur(10px)" }, { opacity: 1, x: 0, filter: "blur(0px)", duration: 0.35, ease: "back.out(1.8)" }, 10.45);
+        tl.fromTo("#checkout", { y: 60, opacity: 0 }, { y: 0, opacity: 1, duration: 0.35, ease: "power3.out" }, 10.55);
+        tl.to("#checkout", { scale: 0.96, duration: 0.08, yoyo: true, repeat: 1, ease: "power2.in" }, 10.98);
+        ripple("#rpCheckout", 11.0);
+        showLayer("#lCart", 11.15);
+        tl.set("#lProduct, #lGrid", { xPercent: 0 }, 11.15);
+        tl.to("#tryonInner", { clipPath: "inset(111px 750px 111px 750px round 52px)", duration: 0.45, ease: "expo.inOut" }, 11.2);
+        tl.to("#tryonInner", { opacity: 0, duration: 0.2, ease: "none" }, 11.45);
+        tl.fromTo("#badge", { scale: 0 }, { scale: 1.3, duration: 0.18, ease: "back.out(3)" }, 11.72);
+        tl.to("#badge", { scale: 1, duration: 0.2, ease: "power2.out" }, 11.9);
+
+        // Teal sparkle burst on the cart badge (the one use of teal on the canvas).
+        const burst = document.getElementById("burst");
+        const n = 8;
+        for (let i = 0; i < n; i++) {
+          const rig = document.createElement("div");
+          rig.className = "sparkRig";
+          rig.style.transform = `rotate(${(360 / n) * i}deg)`;
+          const s = document.createElement("div");
+          s.className = "spark";
+          rig.appendChild(s);
+          burst.appendChild(rig);
+          tl.fromTo(s, { y: -20, scaleY: 0.2, opacity: 0 }, { y: -95, scaleY: 1, opacity: 1, duration: 0.22, ease: "power3.out" }, 11.74);
+          tl.to(s, { y: -130, scaleY: 0.1, opacity: 0, duration: 0.3, ease: "power2.in" }, 11.96);
+        }
+        tl.to("#phoneWrap", { x: 1400, filter: "blur(10px)", duration: 0.32, ease: "power3.in" }, 12.05);
+
+        /* ---------- S8 · 12.2–13.4 tagline ---------- */
+        const tag = wordsInto(document.getElementById("tagLine"), "See it on you. Then shop it.");
+        tag.forEach((w, i) => wordIn(w, 12.28 + i * 0.13, { hold: 0.1, settle: 0.2 }));
+        lineOut(tag, 13.24);
+
+        /* ---------- S9 · 13.4–15.0 hard cut → lockup ---------- */
+        tl.fromTo("#closeCam", { scale: 1.08 }, { scale: 1.0, duration: 0.6, ease: "power2.out" }, 13.4);
+        tl.fromTo("#closePane", { rotationY: -22, transformPerspective: 1200, x: 0, y: -60, rotation: 0 },
+          { rotationY: 0, duration: 0.35, ease: "power2.out" }, 13.4);
+        tl.fromTo("#closeSheen", { x: 0 }, { x: 560, duration: 0.9, ease: "power2.inOut" }, 13.45);
+        tl.to("#closePane", { width: 150, height: 150, x: -195, y: -30, rotation: -8, duration: 0.45, ease: "expo.inOut" }, 13.68);
+        tl.to("#closePaneBody", { borderRadius: 34, duration: 0.45, ease: "expo.inOut" }, 13.68);
+        tl.to("#logoImg", { opacity: 1, duration: 0.3, ease: "none" }, 13.78);
+        tl.to("#closePaneBody", { borderColor: "rgba(255,255,255,0)", boxShadow: "0 24px 56px rgba(80, 60, 200, 0.35)", duration: 0.3, ease: "none" }, 13.78);
+        tl.to("#closeWhite", { opacity: 1, duration: 0.35, ease: "power1.inOut" }, 13.8);
+        tl.fromTo("#lockWord", { opacity: 0, filter: "blur(16px)", x: -24 }, { opacity: 1, filter: "blur(0px)", x: 0, duration: 0.45, ease: "power3.out" }, 13.98);
+        tl.fromTo("#lockSub", { opacity: 0, filter: "blur(10px)", y: 10 }, { opacity: 1, filter: "blur(0px)", y: 0, duration: 0.4, ease: "power2.out" }, 14.3);
+
+        window.__timelines["main"] = tl;
+      }
+
+      document.fonts.ready.then(build);
+    </script>
+  </body>
+</html>
