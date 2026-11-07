@@ -120,7 +120,7 @@ Three gitignored env files drive the flavors: `.env.development`,
 `.env.staging`, `.env.production`, loaded by `flutter_dotenv` and read through
 [lib/core/config/env.dart](lib/core/config/env.dart). They name the host
 the services are on and hold the switches; none of the app's services takes
-a token.
+a token. Copy [.env.example](.env.example) to each of them to start:
 
 ```bash
 # The same host in every flavor for now. ApiEndpoints adds the paths.
